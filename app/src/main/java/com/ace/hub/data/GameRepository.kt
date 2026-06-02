@@ -1,0 +1,108 @@
+package com.ace.hub.data
+
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import android.os.Build
+
+class GameRepository(private val context: Context) {
+
+    private val gameKeywords = listOf(
+        "game", "games", "play", "puzzle", "arcade", "racing", "chess",
+        "sudoku", "solitaire", "casino", "poker", "craft", "clash",
+        "quest", "hero", "battle", "war", "shoot", "strike", "run",
+        "jump", "ball", "sports", "soccer", "football", "basketball",
+        "cricket", "ludo", "candy", "fruit", "bird", "zombie", "dragon",
+        "knight", "kingdom", "empire", "tower", "defense", "pubg",
+        "fortnite", "minecraft", "roblox", "genshin", "among"
+    )
+
+    fun getInstalledGames(): List<GameApp> {
+        val pm = context.packageManager
+        val installedApps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+
+        val games = installedApps.filter { appInfo ->
+            // Skip system apps that aren't updated
+            if (appInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0 &&
+                appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP == 0
+            ) {
+                return@filter false
+            }
+
+            // Must have a launch intent
+            if (pm.getLaunchIntentForPackage(appInfo.packageName) == null) {
+                return@filter false
+            }
+
+            // API 26+: use category
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (appInfo.category == ApplicationInfo.CATEGORY_GAME) {
+                    return@filter true
+                }
+            }
+
+            // Fallback: check FLAG_IS_GAME (deprecated but still useful)
+            @Suppress("DEPRECATION")
+            if (appInfo.flags and ApplicationInfo.FLAG_IS_GAME != 0) {
+                return@filter true
+            }
+
+            // Fallback: keyword matching on package name
+            val pkgLower = appInfo.packageName.lowercase()
+            gameKeywords.any { keyword -> pkgLower.contains(keyword) }
+        }
+
+        return games.map { appInfo ->
+            GameApp(
+                packageName = appInfo.packageName,
+                appName = pm.getApplicationLabel(appInfo).toString(),
+                icon = try {
+                    pm.getApplicationIcon(appInfo)
+                } catch (_: Exception) {
+                    null
+                }
+            )
+        }.sortedBy { it.appName.lowercase() }
+    }
+
+    fun launchGame(packageName: String) {
+        val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+        if (intent != null) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        }
+    }
+
+    fun getAllApps(): List<GameApp> {
+        val pm = context.packageManager
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+
+        val resolveInfos = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.queryIntentActivities(
+                mainIntent,
+                PackageManager.ResolveInfoFlags.of(0)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(mainIntent, 0)
+        }
+
+        return resolveInfos.mapNotNull { resolveInfo ->
+            val activityInfo = resolveInfo.activityInfo ?: return@mapNotNull null
+            GameApp(
+                packageName = activityInfo.packageName,
+                appName = resolveInfo.loadLabel(pm).toString(),
+                icon = try {
+                    resolveInfo.loadIcon(pm)
+                } catch (_: Exception) {
+                    null
+                }
+            )
+        }
+            .distinctBy { it.packageName }
+            .sortedBy { it.appName.lowercase() }
+    }
+}
