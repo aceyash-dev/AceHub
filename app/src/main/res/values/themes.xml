@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
-    <style name="Theme.AceHub" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Use standard Material3 theme -->
+    <style name="Theme.AceHub" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Remove splash theme -->
+    </style>
 </resources>

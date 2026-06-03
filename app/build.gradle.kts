@@ -11,8 +11,8 @@ android {
         applicationId = "com.ace.hub"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.2"
     }
 
     buildTypes {
@@ -52,6 +52,9 @@ dependencies {
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.activity.compose)
+  implementation("androidx.core:core-splashscreen:1.0.1")
+  implementation("com.google.android.material:material:1.14.0")
+  implementation("com.google.accompanist:accompanist-drawablepainter:0.37.3")
 
   // Arch Components
   implementation(libs.androidx.lifecycle.runtime.compose)
@@ -61,6 +64,7 @@ dependencies {
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.compose.material3)
+  implementation("io.coil-kt:coil-compose:2.7.0")
 
   // Material Icons Extended (for rich icon set)
   implementation("androidx.compose.material:material-icons-extended")
