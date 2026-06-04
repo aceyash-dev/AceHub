@@ -4,7 +4,10 @@ import android.graphics.drawable.Drawable
 
 data class MonitorData(
     val cpuUsage: Float = 0f,
-    val cpuHistoryList: List<Float> = emptyList(), // Added history for graph
+    val gpuUsage: Float = 0f,
+    val fps: Float = 60f,
+    val cpuHistoryList: List<Float> = emptyList(),
+    val fpsHistoryList: List<Float> = List(20) { 60f },
     val coreFrequencies: List<Long?> = emptyList(),
     val coreCount: Int = Runtime.getRuntime().availableProcessors(),
     val ramUsedMB: Long = 0,

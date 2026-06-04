@@ -89,7 +89,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Start overlay service
         if (Settings.canDrawOverlays(context)) {
             val overlayIntent = Intent(context, OverlayService::class.java)
-            context.startForegroundService(overlayIntent)
+            try {
+                context.startForegroundService(overlayIntent)
+            } catch (e: Exception) {
+                context.startService(overlayIntent)
+            }
         }
 
         // Launch the game

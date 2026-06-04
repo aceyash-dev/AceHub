@@ -21,6 +21,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.content.Intent
 import android.net.Uri
 import coil.compose.rememberAsyncImagePainter
+import java.io.File
 
 @Composable
 fun MeScreen(
@@ -31,10 +32,18 @@ fun MeScreen(
     onUsernameChanged: (String) -> Unit
 ) {
     val context = LocalContext.current
-    var pfpUri by remember { mutableStateOf<Uri?>(null) }
+    val pfpFile = File(context.filesDir, "profile_pic.jpg")
+    var pfpUri by remember { mutableStateOf<Uri?>(if (pfpFile.exists()) Uri.fromFile(pfpFile) else null) }
     
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        pfpUri = uri
+        if (uri != null) {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                pfpFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            pfpUri = Uri.fromFile(pfpFile)
+        }
     }
 
     Column(

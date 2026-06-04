@@ -13,6 +13,9 @@ import androidx.compose.ui.unit.dp
 import com.ace.hub.data.GameApp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppPickerSheet(
@@ -20,6 +23,9 @@ fun AppPickerSheet(
     onAppSelected: (GameApp) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredApps = apps.filter { it.appName.contains(searchQuery, ignoreCase = true) }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(),
@@ -28,9 +34,15 @@ fun AppPickerSheet(
         dragHandle = { BottomSheetDefaults.DragHandle() }
     ) {
         Column(modifier = Modifier.padding(16.dp).fillMaxHeight(0.7f)) {
-            Text("Select a Game", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                label = { Text("Search Games") },
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+            )
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(apps) { app ->
+                items(filteredApps) { app ->
                     ListItem(
                         headlineContent = { Text(app.appName, style = MaterialTheme.typography.bodyLarge) },
                         leadingContent = {

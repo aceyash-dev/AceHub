@@ -28,18 +28,24 @@ fun Navigation(viewModel: MainViewModel) {
     AceHubTheme(darkTheme = if (useSystemTheme) isSystemInDarkTheme() else false, customAccent = accentColor) {
         Scaffold(
             bottomBar = {
-                NavigationBar(modifier = Modifier.height(64.dp)) {
+                NavigationBar(
+                    modifier = Modifier.height(64.dp),
+                    tonalElevation = 0.dp,
+                    containerColor = MaterialTheme.colorScheme.surface
+                ) {
                     NavigationBarItem(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
                         label = { Text("Play") },
-                        icon = { Icon(Icons.Default.SportsEsports, null) }
+                        icon = { Icon(Icons.Default.SportsEsports, null) },
+                        colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer)
                     )
                     NavigationBarItem(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
                         label = { Text("Me") },
-                        icon = { Icon(Icons.Default.AccountCircle, null) }
+                        icon = { Icon(Icons.Default.AccountCircle, null) },
+                        colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer)
                     )
                 }
             }

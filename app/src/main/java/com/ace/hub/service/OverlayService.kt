@@ -6,12 +6,15 @@ import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.*
 import android.view.*
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.Modifier
+import androidx.compose.runtime.*
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.material3.MaterialTheme
 import androidx.core.app.NotificationCompat
 import com.ace.hub.data.MonitorData
@@ -44,21 +47,63 @@ class OverlayService : Service() {
         }
     }
 
+    private var startTime: Long = 0L
+
     override fun onCreate() {
         super.onCreate()
+        startTime = System.currentTimeMillis()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         startForegroundWithNotification()
         setupComposeOverlay()
         bindToMonitoringService()
+        
+        // Timer for notification
+        serviceScope.launch {
+            while (isActive) {
+                delay(1000)
+                updateNotification()
+            }
+        }
+    }
+
+    private fun updateNotification() {
+        val elapsedMillis = System.currentTimeMillis() - startTime
+        val seconds = (elapsedMillis / 1000) % 60
+        val minutes = (elapsedMillis / 1000 / 60) % 60
+        val hours = (elapsedMillis / 1000 / 3600)
+        val timeString = String.format("%02d:%02d:%02d", hours, minutes, seconds)
+
+        val notification = NotificationCompat.Builder(this, "acehub_overlay")
+            .setContentTitle("Playing Time")
+            .setContentText(timeString)
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setOngoing(true)
+            .build()
+        
+        startForeground(2, notification)
     }
 
     private fun setupComposeOverlay() {
-        overlayView = ComposeView(this).apply {
-            setContent {
-                MaterialTheme {
-                    var isExpanded by remember { mutableStateOf(false) }
-                    val data by monitorData.collectAsState()
-                    
+        overlayView = ComposeView(this)
+        var offsetX by mutableStateOf(0f)
+        var offsetY by mutableStateOf(0f)
+
+        overlayView.setContent {
+            MaterialTheme {
+                var isExpanded by remember { mutableStateOf(false) }
+                val data by monitorData.collectAsState()
+                
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+                        .pointerInput(Unit) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                offsetX += dragAmount.x
+                                offsetY += dragAmount.y
+                            }
+                        }
+                ) {
                     OverlayContent(
                         monitorData = data,
                         isExpanded = isExpanded,
@@ -79,8 +124,7 @@ class OverlayService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             layoutType,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
