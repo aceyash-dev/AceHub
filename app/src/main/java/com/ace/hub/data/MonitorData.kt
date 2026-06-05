@@ -42,5 +42,6 @@ data class DeviceInfo(
 data class GameApp(
     val packageName: String,
     val appName: String,
-    val icon: Drawable?
+    val icon: Drawable?,
+    val versionName: String = "Unknown"
 )

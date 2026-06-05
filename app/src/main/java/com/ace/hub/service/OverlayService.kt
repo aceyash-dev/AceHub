@@ -48,22 +48,38 @@ class OverlayService : Service() {
     }
 
     private var startTime: Long = 0L
+    private var gamePackageName: String? = null
+    private var overlayAdded = false
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val newPackageName = intent?.getStringExtra("package_name")
+        if (newPackageName != null && newPackageName != gamePackageName) {
+            gamePackageName = newPackageName
+            startTime = System.currentTimeMillis()
+        }
+        
+        if (!overlayAdded) {
+            windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+            startForegroundWithNotification()
+            setupComposeOverlay()
+            bindToMonitoringService()
+            
+            android.widget.Toast.makeText(this, "AceHub Overlay Active", android.widget.Toast.LENGTH_SHORT).show()
+            
+            // Timer for notification
+            serviceScope.launch {
+                while (isActive) {
+                    delay(1000)
+                    updateNotification()
+                }
+            }
+            overlayAdded = true
+        }
+        return START_STICKY
+    }
 
     override fun onCreate() {
         super.onCreate()
-        startTime = System.currentTimeMillis()
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        startForegroundWithNotification()
-        setupComposeOverlay()
-        bindToMonitoringService()
-        
-        // Timer for notification
-        serviceScope.launch {
-            while (isActive) {
-                delay(1000)
-                updateNotification()
-            }
-        }
     }
 
     private fun updateNotification() {
@@ -124,10 +140,12 @@ class OverlayService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             layoutType,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
+            x = 100
+            y = 100
         }
 
         windowManager.addView(overlayView, params)
@@ -163,5 +181,4 @@ class OverlayService : Service() {
     }
 
     override fun onBind(intent: Intent?) = null
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
 }

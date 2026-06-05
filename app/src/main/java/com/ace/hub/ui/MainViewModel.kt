@@ -5,15 +5,12 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.net.Uri
 import android.os.IBinder
 import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.ace.hub.data.DeviceInfo
-import com.ace.hub.data.GameApp
-import com.ace.hub.data.GameRepository
-import com.ace.hub.data.MonitorData
-import com.ace.hub.data.SystemMonitor
+import com.ace.hub.data.*
 import com.ace.hub.service.MonitoringService
 import com.ace.hub.service.OverlayService
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +24,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val context = application.applicationContext
     private val systemMonitor = SystemMonitor(context)
     private val gameRepository = GameRepository(context)
+    private val userPrefs = UserPreferences(context)
+
+    private val _username = MutableStateFlow(userPrefs.username)
+    val username: StateFlow<String> = _username.asStateFlow()
+
+    private val _useSystemTheme = MutableStateFlow(userPrefs.useSystemTheme)
+    val useSystemTheme: StateFlow<Boolean> = _useSystemTheme.asStateFlow()
+
+    private val _customSeedColor = MutableStateFlow(userPrefs.customSeedColor)
+    val customSeedColor: StateFlow<Int> = _customSeedColor.asStateFlow()
+
+    fun updateUsername(name: String) {
+        _username.value = name
+        userPrefs.username = name
+    }
+
+    fun updateSystemTheme(use: Boolean) {
+        _useSystemTheme.value = use
+        userPrefs.useSystemTheme = use
+    }
+
+    fun updateCustomSeedColor(color: Int) {
+        _customSeedColor.value = color
+        userPrefs.customSeedColor = color
+    }
 
     private val _monitorData = MutableStateFlow(MonitorData())
     val monitorData: StateFlow<MonitorData> = _monitorData.asStateFlow()
@@ -85,19 +107,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun launchGameWithOverlay(packageName: String) {
-        // Start overlay service
+    fun launchGameWithOverlay(context: Context, packageName: String) {
         if (Settings.canDrawOverlays(context)) {
-            val overlayIntent = Intent(context, OverlayService::class.java)
+            val overlayIntent = Intent(context, OverlayService::class.java).apply {
+                putExtra("package_name", packageName)
+            }
             try {
                 context.startForegroundService(overlayIntent)
             } catch (e: Exception) {
                 context.startService(overlayIntent)
             }
+            gameRepository.launchGame(packageName)
+        } else {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:${context.packageName}")
+            )
+            context.startActivity(intent)
         }
+    }
 
-        // Launch the game
-        gameRepository.launchGame(packageName)
+    fun getPlayTime(packageName: String): Long {
+        return gameRepository.getAppPlayTime(packageName)
     }
 
     override fun onCleared() {

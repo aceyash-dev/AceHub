@@ -7,6 +7,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,13 +30,26 @@ fun OverlayContent(
             .animateContentSize(animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow))
             .padding(8.dp),
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-        tonalElevation = 8.dp
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f),
+        tonalElevation = 12.dp,
+        border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
     ) {
         Column(modifier = Modifier.padding(12.dp).clickable { onToggleMode() }) {
             // Minimized Header
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${monitorData.fps.toInt()} FPS", style = MaterialTheme.typography.labelMedium)
+                Icon(
+                    imageVector = Icons.Default.SportsEsports,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "${monitorData.fps.toInt()} FPS",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
             }
             
             // Sliding Expanded content

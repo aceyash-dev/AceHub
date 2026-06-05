@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,12 +21,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.ui.res.painterResource
+import com.ace.hub.R
 import coil.compose.rememberAsyncImagePainter
 import java.io.File
 
 @Composable
 fun MeScreen(
-    onAccentColorChanged: (Color) -> Unit,
     useSystemTheme: Boolean,
     onUseSystemThemeChanged: (Boolean) -> Unit,
     username: String,
@@ -33,6 +35,10 @@ fun MeScreen(
 ) {
     val context = LocalContext.current
     val pfpFile = File(context.filesDir, "profile_pic.jpg")
+    val statsFile = File(context.filesDir, "stats.json")
+    
+    // In a real app, you would load these from a local DB or JSON file
+    // For now, let's keep them in variables
     var pfpUri by remember { mutableStateOf<Uri?>(if (pfpFile.exists()) Uri.fromFile(pfpFile) else null) }
     
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -49,8 +55,8 @@ fun MeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp)
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Surface(
@@ -89,28 +95,17 @@ fun MeScreen(
             Switch(checked = useSystemTheme, onCheckedChange = onUseSystemThemeChanged)
         }
         
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        Text("Accent Color", style = MaterialTheme.typography.titleLarge)
-        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            listOf(Color.Blue, Color.Red, Color.Green, Color.Magenta).forEach { color ->
-                Surface(
-                    modifier = Modifier.size(40.dp).clip(CircleShape).clickable { onAccentColorChanged(color) },
-                    color = color
-                ) {}
-            }
-        }
-        
         HorizontalDivider()
 
         Spacer(modifier = Modifier.height(24.dp))
-        Text("All-Time Playing Stats", style = MaterialTheme.typography.titleLarge)
+        Text("Gaming Stats", style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(16.dp))
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
+                // Here you would display real stored playtime
                 Text("Total Play Time: 0m")
                 Text("Games Played: 0")
-                Text("Favorite Game: --")
+                Text("Recent Games: None")
             }
         }
         
@@ -119,7 +114,15 @@ fun MeScreen(
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/aceyash-dev"))
             context.startActivity(intent)
         }) {
-            Text("@aceyash-dev")
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_github),
+                    contentDescription = "GitHub",
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+                Text("GitHub @aceyash-dev", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            }
         }
         Text("©Ace Horizon 2026", style = MaterialTheme.typography.bodySmall)
         Spacer(modifier = Modifier.height(16.dp))

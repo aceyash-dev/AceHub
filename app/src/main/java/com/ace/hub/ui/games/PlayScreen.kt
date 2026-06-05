@@ -3,30 +3,41 @@ package com.ace.hub.ui.games
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Launch
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Store
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.ace.hub.R
 import com.ace.hub.data.GameApp
 import com.ace.hub.ui.MainViewModel
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
+import com.patrykandpatrick.vico.compose.cartesian.*
+import com.patrykandpatrick.vico.compose.cartesian.layer.*
+import com.patrykandpatrick.vico.compose.cartesian.axis.*
+import com.patrykandpatrick.vico.compose.common.shader.color
+import com.patrykandpatrick.vico.core.cartesian.data.*
+import com.patrykandpatrick.vico.core.common.shader.DynamicShader
 
 @Composable
 fun PlayScreen(
@@ -38,7 +49,13 @@ fun PlayScreen(
     val monitorData by viewModel.monitorData.collectAsState()
     val allApps by viewModel.allApps.collectAsState()
     var pinnedGames by remember { mutableStateOf<List<GameApp>>(emptyList()) }
+    var selectedGame by remember { mutableStateOf<GameApp?>(null) }
     var showAppPicker by remember { mutableStateOf(false) }
+    var selectedGamePlayTime by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(selectedGame) {
+        selectedGamePlayTime = selectedGame?.let { viewModel.getPlayTime(it.packageName) } ?: 0L
+    }
 
     val currentHour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
     val greeting = when (currentHour) {
@@ -47,88 +64,392 @@ fun PlayScreen(
         else -> "Good evening"
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
-            Text("$greeting, $username!", style = MaterialTheme.typography.headlineLarge)
-            
-            // Recently Played / Pinned (LazyRow for scrolling)
-            Spacer(modifier = Modifier.height(16.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                items(pinnedGames) { game ->
-                    Card(
-                        modifier = Modifier.width(280.dp).animateContentSize(animationSpec = spring()),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Image(
-                                painter = rememberDrawablePainter(drawable = game.icon),
-                                contentDescription = null,
-                                modifier = Modifier.size(64.dp)
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(game.appName, style = MaterialTheme.typography.titleMedium)
-                                Row {
-                                    IconButton(onClick = {
-                                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                                        intent.data = Uri.parse("package:${game.packageName}")
-                                        context.startActivity(intent)
-                                    }) { Icon(Icons.Default.Info, "App Info") }
-                                    IconButton(onClick = {
-                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${game.packageName}"))
-                                        context.startActivity(intent)
-                                    }) { Icon(Icons.Default.Store, "Store") }
-                                    IconButton(onClick = { viewModel.launchGameWithOverlay(game.packageName) }) {
-                                        Icon(Icons.Default.Launch, "Launch")
-                                    }
-                                }
-                            }
-                        }
-                    }
+    // Vico data state
+    val modelState = remember { mutableStateOf<CartesianChartModel?>(null) }
+    LaunchedEffect(monitorData.fpsHistoryList) {
+        val points = monitorData.fpsHistoryList
+        if (points.isNotEmpty()) {
+            modelState.value = CartesianChartModel(
+                LineCartesianLayerModel.build {
+                    series(points)
                 }
-            }
+            )
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = greeting,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "$username!",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
             
-            // Performance Card
-            Card(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Performance", style = MaterialTheme.typography.titleLarge)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("CPU: ${monitorData.cpuUsage.toInt()}%")
-                    Text("GPU: ${monitorData.gpuRenderer}")
-                    
-                    if (!android.app.AppOpsManager.MODE_ALLOWED.equals(
-                        (context.getSystemService(android.content.Context.APP_OPS_SERVICE) as android.app.AppOpsManager)
-                            .checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), context.packageName)
-                    )) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = {
-                            context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                        }) {
-                            Icon(Icons.Default.Settings, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Grant Usage Access")
-                        }
-                    }
-                }
-            }
+            Spacer(modifier = Modifier.height(28.dp))
             
-            FilledIconButton(
-                onClick = { showAppPicker = true },
-                modifier = Modifier.align(Alignment.End)
+            // Library Section
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Icon(Icons.Default.Add, "Add game")
+                Text(
+                    text = "Library",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                if (pinnedGames.isNotEmpty()) {
+                    TextButton(onClick = { showAppPicker = true }) {
+                        Text("Add More")
+                    }
+                }
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (pinnedGames.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                        .clickable { showAppPicker = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Default.AddCircleOutline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Add your first game",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(bottom = 8.dp)
+                ) {
+                    items(pinnedGames) { game ->
+                        val isSelected = selectedGame?.packageName == game.packageName
+                        GameCard(
+                            game = game,
+                            isSelected = isSelected,
+                            onClick = { selectedGame = if (isSelected) null else game }
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // Action Buttons Group
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Add Game Button (Large)
+                LargeActionButton(
+                    text = "Add Game",
+                    icon = Icons.Default.Add,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                    onClick = { showAppPicker = true }
+                )
+
+                // Launch Button (Large, Primary)
+                LargeActionButton(
+                    text = if (selectedGame != null) "Launch" else "Select Game",
+                    icon = Icons.Default.PlayArrow,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.weight(1f),
+                    enabled = selectedGame != null,
+                    onClick = { 
+                        selectedGame?.let { viewModel.launchGameWithOverlay(context, it.packageName) }
+                    }
+                )
+            }
+
+            if (selectedGame != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Schedule, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Playtime (last 7 days): ${formatPlayTime(selectedGamePlayTime)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Performance Graph Section
+            Text(
+                text = "Performance",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                "Real-time FPS",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                "${monitorData.fps.toInt()} FPS",
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Icon(
+                            Icons.Default.Speed,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Vico Chart
+                    modelState.value?.let { model ->
+                        CartesianChartHost(
+                            chart = rememberCartesianChart(
+                                rememberLineCartesianLayer(
+                                    lines = listOf(
+                                        rememberLineSpec(
+                                            shader = DynamicShader.color(MaterialTheme.colorScheme.primary),
+                                            thickness = 3.dp
+                                        )
+                                    )
+                                ),
+                                startAxis = rememberStartAxis(
+                                    label = rememberAxisLabelComponent(
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textSize = 10.sp
+                                    ),
+                                    axis = null,
+                                    tick = null
+                                ),
+                                bottomAxis = rememberBottomAxis(
+                                    label = null,
+                                    axis = null,
+                                    tick = null
+                                )
+                            ),
+                            model = model,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // Device Info Card
+            val deviceInfo by viewModel.deviceInfo.collectAsState()
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.DeveloperMode,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Device Information",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(20.dp))
+                    
+                    deviceInfo?.let { info ->
+                        InfoRow(label = "Model", value = info.deviceName)
+                        InfoRow(label = "Processor", value = info.processor)
+                        InfoRow(label = "RAM", value = "${info.totalRamMB} MB")
+                        InfoRow(label = "Android", value = "Version ${info.androidVersion}")
+                        InfoRow(label = "GPU", value = info.gpuRenderer)
+                    } ?: Text("Loading device info...", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(120.dp)) 
         }
         
         if (showAppPicker) {
             AppPickerSheet(
                 apps = allApps,
                 onAppSelected = {
-                    pinnedGames = pinnedGames + it
+                    pinnedGames = (pinnedGames + it).distinctBy { g -> g.packageName }
                     showAppPicker = false
                 },
                 onDismiss = { showAppPicker = false }
             )
         }
+    }
+}
+
+fun formatPlayTime(millis: Long): String {
+    val minutes = (millis / (1000 * 60)) % 60
+    val hours = (millis / (1000 * 60 * 60))
+    return if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
+}
+
+@Composable
+fun GameCard(
+    game: GameApp,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(100.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+            .clickable { onClick() }
+            .padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .then(
+                    if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp))
+                    else Modifier
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = rememberDrawablePainter(drawable = game.icon),
+                contentDescription = null,
+                modifier = Modifier.size(48.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = game.appName,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
+    }
+}
+
+@Composable
+fun LargeActionButton(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    containerColor: Color,
+    contentColor: Color,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(64.dp),
+        shape = RoundedCornerShape(20.dp),
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = containerColor,
+            contentColor = contentColor,
+            disabledContainerColor = containerColor.copy(alpha = 0.4f),
+            disabledContentColor = contentColor.copy(alpha = 0.4f)
+        ),
+        contentPadding = PaddingValues(horizontal = 16.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+fun InfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }

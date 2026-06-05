@@ -1,10 +1,12 @@
 package com.ace.hub.data
 
+import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
+import java.util.Calendar
 
 class GameRepository(private val context: Context) {
 
@@ -54,6 +56,11 @@ class GameRepository(private val context: Context) {
         }
 
         return games.map { appInfo ->
+            val pkgInfo = try {
+                pm.getPackageInfo(appInfo.packageName, 0)
+            } catch (_: Exception) {
+                null
+            }
             GameApp(
                 packageName = appInfo.packageName,
                 appName = pm.getApplicationLabel(appInfo).toString(),
@@ -61,7 +68,8 @@ class GameRepository(private val context: Context) {
                     pm.getApplicationIcon(appInfo)
                 } catch (_: Exception) {
                     null
-                }
+                },
+                versionName = pkgInfo?.versionName ?: "Unknown"
             )
         }.sortedBy { it.appName.lowercase() }
     }
@@ -92,6 +100,11 @@ class GameRepository(private val context: Context) {
 
         return resolveInfos.mapNotNull { resolveInfo ->
             val activityInfo = resolveInfo.activityInfo ?: return@mapNotNull null
+            val pkgInfo = try {
+                pm.getPackageInfo(activityInfo.packageName, 0)
+            } catch (_: Exception) {
+                null
+            }
             GameApp(
                 packageName = activityInfo.packageName,
                 appName = resolveInfo.loadLabel(pm).toString(),
@@ -99,10 +112,25 @@ class GameRepository(private val context: Context) {
                     resolveInfo.loadIcon(pm)
                 } catch (_: Exception) {
                     null
-                }
+                },
+                versionName = pkgInfo?.versionName ?: "Unknown"
             )
         }
             .distinctBy { it.packageName }
             .sortedBy { it.appName.lowercase() }
+    }
+
+    fun getAppPlayTime(packageName: String): Long {
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val calendar = Calendar.getInstance()
+        calendar.add(Calendar.DAY_OF_YEAR, -7) // Last 7 days
+
+        val stats = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_BEST,
+            calendar.timeInMillis,
+            System.currentTimeMillis()
+        )
+
+        return stats?.find { it.packageName == packageName }?.totalTimeInForeground ?: 0L
     }
 }

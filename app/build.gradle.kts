@@ -11,8 +11,20 @@ android {
         applicationId = "com.ace.hub"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.2"
+        versionCode = 3
+        versionName = "1.2026.1"
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            // To define specific ABIs (e.g., armeabi-v7a, arm64-v8a, x86_64)
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86_64")
+
+            // Set to true if you also want a universal APK that supports all ABIs
+            isUniversalApk = true
+        }
     }
 
     buildTypes {
@@ -89,4 +101,8 @@ dependencies {
   implementation(libs.androidx.navigation3.ui)
   implementation(libs.androidx.navigation3.runtime)
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+
+  // Vico (Charting)
+  implementation("com.patrykandpatrick.vico:compose:2.0.0-alpha.22")
+  implementation("com.patrykandpatrick.vico:compose-m3:2.0.0-alpha.22")
 }
