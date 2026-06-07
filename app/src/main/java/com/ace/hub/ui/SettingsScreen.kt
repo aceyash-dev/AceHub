@@ -9,7 +9,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ColorLens
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,11 +18,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.core.graphics.toColorInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,8 +28,6 @@ fun SettingsScreen(
     onUsernameChanged: (String) -> Unit,
     useSystemTheme: Boolean,
     onUseSystemThemeChanged: (Boolean) -> Unit,
-    customSeedColor: Int,
-    onCustomSeedColorChanged: (Int) -> Unit,
     isUsageAnalyticsEnabled: Boolean,
     onUsageAnalyticsEnabledChanged: (Boolean) -> Unit,
     hasUsagePermission: Boolean,
@@ -40,7 +36,6 @@ fun SettingsScreen(
     isAutoBoostEnabled: Boolean,
     onAutoBoostEnabledChanged: (Boolean) -> Unit
 ) {
-    var showColorPicker by remember { mutableStateOf(false) }
     var showUsernameDialog by remember { mutableStateOf(false) }
     var tempUsername by remember { mutableStateOf(username) }
 
@@ -98,75 +93,12 @@ fun SettingsScreen(
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        // Material You Style Toggle
-        SettingsCard {
-            Row(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Dynamic Color",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "Use system wallpaper colors",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(
-                    checked = useSystemTheme,
-                    onCheckedChange = onUseSystemThemeChanged,
-                    thumbContent = if (useSystemTheme) {
-                        {
-                            Icon(
-                                imageVector = Icons.Filled.ColorLens,
-                                contentDescription = null,
-                                modifier = Modifier.size(SwitchDefaults.IconSize)
-                            )
-                        }
-                    } else null
-                )
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(12.dp))
-        
-        // Custom Theme Color Picker
-        SettingsCard(
-            onClick = { showColorPicker = true }
-        ) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(Color(customSeedColor))
-                        .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Column {
-                    Text(
-                        text = "Theme Color",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "Customize the primary accent",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
+        SettingsToggle(
+            title = "Follow System Theme",
+            description = "Sync app appearance with Android settings",
+            checked = useSystemTheme,
+            onCheckedChange = onUseSystemThemeChanged
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
         
@@ -203,30 +135,58 @@ fun SettingsScreen(
             checked = isAutoBoostEnabled,
             onCheckedChange = onAutoBoostEnabledChanged
         )
-        
-        if (showColorPicker) {
-            ColorPickerDial(
-                initialColor = Color(customSeedColor),
-                onColorSelected = { 
-                    onCustomSeedColorChanged(it.toArgb())
-                    showColorPicker = false
-                },
-                onDismiss = { showColorPicker = false }
-            )
-        }
 
+        Spacer(modifier = Modifier.height(12.dp))
+
+        var mockBatteryStats by remember { mutableStateOf(true) }
+        SettingsToggle(
+            title = "Show Battery Stats",
+            description = "Monitor battery temperature and level",
+            checked = mockBatteryStats,
+            onCheckedChange = { mockBatteryStats = it }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        var mockVibration by remember { mutableStateOf(false) }
+        SettingsToggle(
+            title = "Vibration on Launch",
+            description = "Haptic feedback when starting a game",
+            checked = mockVibration,
+            onCheckedChange = { mockVibration = it }
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "Game Mode Settings",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        var mockDND by remember { mutableStateOf(false) }
+        SettingsToggle(
+            title = "Auto DND",
+            description = "Silence notifications while gaming",
+            checked = mockDND,
+            onCheckedChange = { mockDND = it }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        var mockBrightness by remember { mutableStateOf(false) }
+        SettingsToggle(
+            title = "Brightness Lock",
+            description = "Prevent auto-brightness changes in game",
+            checked = mockBrightness,
+            onCheckedChange = { mockBrightness = it }
+        )
+        
         if (showUsernameDialog) {
             AlertDialog(
                 onDismissRequest = { showUsernameDialog = false },
-                title = { Text("Edit Username") },
-                text = {
-                    OutlinedTextField(
-                        value = tempUsername,
-                        onValueChange = { tempUsername = it },
-                        label = { Text("Username") },
-                        singleLine = true
-                    )
-                },
                 confirmButton = {
                     TextButton(onClick = {
                         onUsernameChanged(tempUsername)
@@ -239,7 +199,28 @@ fun SettingsScreen(
                     TextButton(onClick = { showUsernameDialog = false }) {
                         Text("Cancel")
                     }
-                }
+                },
+                title = { Text("Edit Username") },
+                text = {
+                    Column {
+                        Text(
+                            "Enter a new display name for your profile.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+                        OutlinedTextField(
+                            value = tempUsername,
+                            onValueChange = { tempUsername = it },
+                            label = { Text("Username") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp)
+                        )
+                    }
+                },
+                shape = RoundedCornerShape(28.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
             )
         }
 
@@ -294,78 +275,30 @@ fun SettingsToggle(
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
-                colors = if (error) SwitchDefaults.colors(
-                    checkedThumbColor = MaterialTheme.colorScheme.error,
-                    checkedTrackColor = MaterialTheme.colorScheme.errorContainer
-                ) else SwitchDefaults.colors()
-            )
-        }
-    }
-}
-
-@Composable
-fun ColorPickerDial(
-    initialColor: Color,
-    onColorSelected: (Color) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var hexText by remember { mutableStateOf(String.format("#%06X", (0xFFFFFF and initialColor.toArgb()))) }
-    
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(28.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "Pick a color",
-                    style = MaterialTheme.typography.headlineSmall
-                )
-                Spacer(modifier = Modifier.height(20.dp))
-                
-                // Color Wheel Placeholder / Simple Grid
-                Row(modifier = Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    listOf(Color.Red, Color.Blue, Color.Green, Color.Yellow, Color.Magenta, Color.Cyan).forEach { color ->
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(color)
-                                .clickable { onColorSelected(color) }
+                thumbContent = if (checked) {
+                    {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(SwitchDefaults.IconSize),
                         )
                     }
-                }
-                
-                Spacer(modifier = Modifier.height(20.dp))
-                
-                OutlinedTextField(
-                    value = hexText,
-                    onValueChange = { 
-                        hexText = it
-                        if (it.startsWith("#") && (it.length == 7 || it.length == 9)) {
-                            try {
-                                onColorSelected(Color(it.toColorInt()))
-                            } catch (_: Exception) {}
-                        }
-                    },
-                    label = { Text("Hex Color") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                Spacer(modifier = Modifier.height(24.dp))
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(onClick = onDismiss) {
-                        Text("Cancel")
+                } else {
+                    {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = null,
+                            modifier = Modifier.size(SwitchDefaults.IconSize),
+                        )
                     }
-                }
-            }
+                },
+                colors = if (error) SwitchDefaults.colors(
+                    checkedThumbColor = MaterialTheme.colorScheme.error,
+                    checkedTrackColor = MaterialTheme.colorScheme.errorContainer,
+                    uncheckedThumbColor = MaterialTheme.colorScheme.error,
+                    uncheckedBorderColor = MaterialTheme.colorScheme.error
+                ) else SwitchDefaults.colors()
+            )
         }
     }
 }

@@ -11,18 +11,15 @@ android {
         applicationId = "com.ace.hub"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.2026.1"
+        versionCode = 5
+        versionName = "1.2026.6-Beta.2"
     }
 
     splits {
         abi {
             isEnable = true
-            // To define specific ABIs (e.g., armeabi-v7a, arm64-v8a, x86_64)
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86_64")
-
-            // Set to true if you also want a universal APK that supports all ABIs
+            include("armeabi", "arm64", "x86_64")
             isUniversalApk = true
         }
     }
@@ -71,6 +68,8 @@ dependencies {
   // Arch Components
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
+  implementation(libs.androidx.lifecycle.service)
+  implementation(libs.androidx.savedstate)
 
   // Compose
   implementation(libs.androidx.compose.ui)
@@ -105,4 +104,8 @@ dependencies {
   // Vico (Charting)
   implementation("com.patrykandpatrick.vico:compose:2.0.0-alpha.22")
   implementation("com.patrykandpatrick.vico:compose-m3:2.0.0-alpha.22")
+
+  // Networking & Serialization
+  implementation(libs.okhttp)
+  implementation(libs.kotlinx.serialization.json)
 }

@@ -8,6 +8,7 @@ import android.content.ServiceConnection
 import android.net.Uri
 import android.os.IBinder
 import android.provider.Settings
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ace.hub.data.*
@@ -19,6 +20,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
+import okhttp3.Request
+
+@Serializable
+data class GitHubRelease(
+    val tag_name: String,
+    val html_url: String
+)
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -33,9 +45,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _useSystemTheme = MutableStateFlow(userPrefs.useSystemTheme)
     val useSystemTheme: StateFlow<Boolean> = _useSystemTheme.asStateFlow()
 
-    private val _customSeedColor = MutableStateFlow(userPrefs.customSeedColor)
-    val customSeedColor: StateFlow<Int> = _customSeedColor.asStateFlow()
-
     private val _isUsageAnalyticsEnabled = MutableStateFlow(userPrefs.isUsageAnalyticsEnabled)
     val isUsageAnalyticsEnabled: StateFlow<Boolean> = _isUsageAnalyticsEnabled.asStateFlow()
 
@@ -44,6 +53,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isAutoBoostEnabled = MutableStateFlow(userPrefs.isAutoBoostEnabled)
     val isAutoBoostEnabled: StateFlow<Boolean> = _isAutoBoostEnabled.asStateFlow()
+
+    private val _newUpdateAvailable = MutableStateFlow<String?>(null)
+    val newUpdateAvailable: StateFlow<String?> = _newUpdateAvailable.asStateFlow()
 
     private val _pinnedGamesPackageNames = MutableStateFlow(userPrefs.pinnedGames)
     val pinnedGamesPackageNames: StateFlow<Set<String>> = _pinnedGamesPackageNames.asStateFlow()
@@ -62,11 +74,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateSystemTheme(use: Boolean) {
         _useSystemTheme.value = use
         userPrefs.useSystemTheme = use
-    }
-
-    fun updateCustomSeedColor(color: Int) {
-        _customSeedColor.value = color
-        userPrefs.customSeedColor = color
     }
 
     fun updateUsageAnalytics(enabled: Boolean) {
@@ -107,6 +114,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateProfileImage(uri: String?) {
         _profileImageUri.value = uri
         userPrefs.profileImageUri = uri
+    }
+
+    fun checkForUpdates() {
+        viewModelScope.launch {
+            try {
+                val latestRelease = withContext(Dispatchers.IO) {
+                    val client = OkHttpClient()
+                    val request = Request.Builder()
+                        .url("https://api.github.com/repos/aceyash-dev/AceHub/releases/latest")
+                        .build()
+                    
+                    client.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) return@withContext null
+                        val body = response.body?.string() ?: return@withContext null
+                        Json { ignoreUnknownKeys = true }.decodeFromString<GitHubRelease>(body)
+                    }
+                }
+
+                if (latestRelease != null) {
+                    val currentVersion = context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                    // Simple version comparison: if tag name is different from current version name
+                    // In a more robust app, you might parse semantic versioning (1.0.0 > 0.9.0)
+                    if (latestRelease.tag_name != currentVersion && !latestRelease.tag_name.contains(currentVersion)) {
+                        _newUpdateAvailable.value = latestRelease.html_url
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("AceHub", "Failed to check for updates", e)
+            }
+        }
     }
 
     fun hasUsagePermission(): Boolean {
@@ -171,6 +208,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // Load games list
         loadGames()
+
+        // Check for updates on startup
+        checkForUpdates()
     }
 
     fun loadGames() {

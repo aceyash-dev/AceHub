@@ -2,23 +2,30 @@ package com.ace.hub
 
 import android.content.Context
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -29,20 +36,21 @@ import com.ace.hub.ui.MeScreen
 import com.ace.hub.ui.SettingsScreen
 import com.ace.hub.ui.games.PlayScreen
 import com.ace.hub.ui.theme.AceHubTheme
+import kotlinx.coroutines.launch
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Navigation(viewModel: MainViewModel) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val useSystemTheme by viewModel.useSystemTheme.collectAsState()
     val username by viewModel.username.collectAsState()
-    val customSeedColor by viewModel.customSeedColor.collectAsState()
     val isUsageAnalyticsEnabled by viewModel.isUsageAnalyticsEnabled.collectAsState()
     val isOverlayEnabled by viewModel.isOverlayEnabled.collectAsState()
     val isAutoBoostEnabled by viewModel.isAutoBoostEnabled.collectAsState()
 
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val pagerState = rememberPagerState(pageCount = { 2 })
     var showMeScreen by remember { mutableStateOf(false) }
 
     val pfpFile = File(context.filesDir, "profile_pic.jpg")
@@ -50,8 +58,7 @@ fun Navigation(viewModel: MainViewModel) {
 
     AceHubTheme(
         darkTheme = if (useSystemTheme) isSystemInDarkTheme() else true,
-        useSystemTheme = useSystemTheme,
-        customSeedColor = Color(customSeedColor)
+        useSystemTheme = useSystemTheme
     ) {
         Scaffold(
             topBar = {
@@ -65,7 +72,7 @@ fun Navigation(viewModel: MainViewModel) {
                             Text(
                                 "AceHub",
                                 style = MaterialTheme.typography.titleLarge,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                fontWeight = FontWeight.Bold
                             )
                         },
                         actions = {
@@ -107,43 +114,69 @@ fun Navigation(viewModel: MainViewModel) {
                     exit = slideOutVertically { it } + fadeOut()
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                        shape = RoundedCornerShape(32.dp),
                         color = MaterialTheme.colorScheme.surfaceContainer,
-                        tonalElevation = 8.dp,
-                        modifier = Modifier.clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                        tonalElevation = 3.dp,
+                        modifier = Modifier
+                            .padding(horizontal = 48.dp, vertical = 12.dp) // Slimmer pill: more horizontal padding
+                            .height(64.dp) // Lower height
+                            .clip(RoundedCornerShape(32.dp))
                     ) {
                         NavigationBar(
-                            modifier = Modifier.height(84.dp),
-                            containerColor = Color.Transparent
+                            modifier = Modifier.fillMaxSize(),
+                            containerColor = Color.Transparent,
+                            windowInsets = WindowInsets(0, 0, 0, 0)
                         ) {
                             NavigationBarItem(
-                                selected = selectedTab == 0,
-                                onClick = { selectedTab = 0 },
-                                label = { Text("Play", fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium) },
+                                selected = pagerState.currentPage == 0,
+                                onClick = { 
+                                    scope.launch { pagerState.animateScrollToPage(0) }
+                                },
+                                label = { Text("Play", style = MaterialTheme.typography.labelSmall) },
                                 icon = { 
+                                    val iconScale by animateFloatAsState(
+                                        targetValue = if (pagerState.currentPage == 0) 1.2f else 1f,
+                                        animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessLow),
+                                        label = "icon_scale_play"
+                                    )
                                     Icon(
-                                        if (selectedTab == 0) Icons.Default.SportsEsports else Icons.Default.SportsEsports, 
-                                        null 
+                                        if (pagerState.currentPage == 0) Icons.Filled.SportsEsports else Icons.Outlined.SportsEsports, 
+                                        null,
+                                        modifier = Modifier.size(20.dp).graphicsLayer(scaleX = iconScale, scaleY = iconScale)
                                     ) 
                                 },
                                 colors = NavigationBarItemDefaults.colors(
                                     indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             )
                             NavigationBarItem(
-                                selected = selectedTab == 1,
-                                onClick = { selectedTab = 1 },
-                                label = { Text("Settings", fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium) },
+                                selected = pagerState.currentPage == 1,
+                                onClick = { 
+                                    scope.launch { pagerState.animateScrollToPage(1) }
+                                },
+                                label = { Text("Settings", style = MaterialTheme.typography.labelSmall) },
                                 icon = { 
+                                    val iconScale by animateFloatAsState(
+                                        targetValue = if (pagerState.currentPage == 1) 1.2f else 1f,
+                                        animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessLow),
+                                        label = "icon_scale_settings"
+                                    )
                                     Icon(
-                                        if (selectedTab == 1) Icons.Default.Settings else Icons.Default.Settings, 
-                                        null 
-                                    ) 
+                                        if (pagerState.currentPage == 1) Icons.Filled.Settings else Icons.Outlined.Settings, 
+                                        null,
+                                        modifier = Modifier.size(20.dp).graphicsLayer(scaleX = iconScale, scaleY = iconScale)
+                                    )
                                 },
                                 colors = NavigationBarItemDefaults.colors(
                                     indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             )
                         }
@@ -181,36 +214,30 @@ fun Navigation(viewModel: MainViewModel) {
                             }
                         }
                     } else {
-                        AnimatedContent(
-                            targetState = selectedTab,
-                            transitionSpec = {
-                                val direction = if (targetState > initialState) AnimatedContentTransitionScope.SlideDirection.Left else AnimatedContentTransitionScope.SlideDirection.Right
-                                slideIntoContainer(direction, animationSpec = tween(300)) + fadeIn() togetherWith
-                                        slideOutOfContainer(direction, animationSpec = tween(300)) + fadeOut()
-                            },
-                            label = "tab_transition"
-                        ) { targetTab ->
-                            if (targetTab == 0) {
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier.fillMaxSize(),
+                            beyondViewportPageCount = 1
+                        ) { page ->
+                            if (page == 0) {
                                 PlayScreen(
                                     viewModel = viewModel, 
                                     username = username
                                 )
                             } else {
-                                    SettingsScreen(
-                                        username = username,
-                                        onUsernameChanged = { viewModel.updateUsername(it) },
-                                        useSystemTheme = useSystemTheme,
-                                        onUseSystemThemeChanged = { viewModel.updateSystemTheme(it) },
-                                        customSeedColor = customSeedColor,
-                                        onCustomSeedColorChanged = { viewModel.updateCustomSeedColor(it) },
-                                        isUsageAnalyticsEnabled = isUsageAnalyticsEnabled,
-                                        onUsageAnalyticsEnabledChanged = { viewModel.updateUsageAnalytics(it) },
-                                        hasUsagePermission = viewModel.hasUsagePermission(),
-                                        isOverlayEnabled = isOverlayEnabled,
-                                        onOverlayEnabledChanged = { viewModel.updateOverlayEnabled(it) },
-                                        isAutoBoostEnabled = isAutoBoostEnabled,
-                                        onAutoBoostEnabledChanged = { viewModel.updateAutoBoost(it) }
-                                    )
+                                SettingsScreen(
+                                    username = username,
+                                    onUsernameChanged = { viewModel.updateUsername(it) },
+                                    useSystemTheme = useSystemTheme,
+                                    onUseSystemThemeChanged = { viewModel.updateSystemTheme(it) },
+                                    isUsageAnalyticsEnabled = isUsageAnalyticsEnabled,
+                                    onUsageAnalyticsEnabledChanged = { viewModel.updateUsageAnalytics(it) },
+                                    hasUsagePermission = viewModel.hasUsagePermission(),
+                                    isOverlayEnabled = isOverlayEnabled,
+                                    onOverlayEnabledChanged = { viewModel.updateOverlayEnabled(it) },
+                                    isAutoBoostEnabled = isAutoBoostEnabled,
+                                    onAutoBoostEnabledChanged = { viewModel.updateAutoBoost(it) }
+                                )
                             }
                         }
                     }

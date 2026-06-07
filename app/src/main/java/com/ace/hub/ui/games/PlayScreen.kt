@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -23,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -196,104 +199,79 @@ fun PlayScreen(
                 )
             }
 
-            if (selectedGame != null) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+            AnimatedVisibility(
+                visible = selectedGame != null,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Column {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
                     ) {
-                        Icon(Icons.Default.Schedule, null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "Playtime (last 7 days): ${formatPlayTime(selectedGamePlayTime)}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Schedule, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Playtime (last 7 days): ${formatPlayTime(selectedGamePlayTime)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Performance Graph Section
-            Text(
-                text = "Performance",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            
+            // Performance Card (Simplified & Premium)
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                shape = RoundedCornerShape(32.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                "Real-time FPS",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                "${monitorData.fps.toInt()} FPS",
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = getFpsColor(monitorData.fps)
-                            )
-                        }
-                        Icon(
-                            Icons.Default.Speed,
-                            contentDescription = null,
-                            tint = getFpsColor(monitorData.fps).copy(alpha = 0.5f),
-                            modifier = Modifier.size(40.dp)
+                Row(
+                    modifier = Modifier.padding(28.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            "Real-time FPS",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            "${monitorData.fps.toInt()}",
+                            style = MaterialTheme.typography.displayMedium.copy(fontSize = 44.sp),
+                            fontWeight = FontWeight.Black,
+                            color = getFpsColor(monitorData.fps)
                         )
                     }
                     
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Vico Chart
-                    val fpsColor = getFpsColor(monitorData.fps)
-                    modelState.value?.let { model ->
-                        CartesianChartHost(
-                            chart = rememberCartesianChart(
-                                rememberLineCartesianLayer(
-                                    lines = listOf(
-                                        rememberLineSpec(
-                                            shader = DynamicShader.color(fpsColor),
-                                            thickness = 3.dp
-                                        )
-                                    )
-                                ),
-                                startAxis = rememberStartAxis(
-                                    label = rememberAxisLabelComponent(
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        textSize = 10.sp
-                                    ),
-                                    axis = null,
-                                    tick = null
-                                ),
-                                bottomAxis = rememberBottomAxis(
-                                    label = null,
-                                    axis = null,
-                                    tick = null
-                                )
-                            ),
-                            model = model,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp)
-                        )
+                    Surface(
+                        shape = CircleShape,
+                        color = getFpsColor(monitorData.fps).copy(alpha = 0.12f),
+                        modifier = Modifier.size(72.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.Speed,
+                                contentDescription = null,
+                                tint = getFpsColor(monitorData.fps),
+                                modifier = Modifier.size(36.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -360,23 +338,28 @@ fun formatPlayTime(millis: Long): String {
 fun getFpsColor(fps: Float): Color {
     return when {
         fps < 30f -> Color(0xFFF44336) // Red
-        fps < 40f -> Color(0xFFFF9800) // Orange
-        fps < 50f -> Color(0xFFFFEB3B) // Yellow
-        fps < 60f -> Color(0xFF8BC34A) // Light Green
-        fps < 90f -> Color(0xA7DE0000) // Green
-        else -> Color(0xFF388E3C)      // Dark Green
+        fps < 45f -> Color(0xFFFF9800) // Orange
+        fps < 60f -> Color(0xFFFFC107) // Amber
+        fps < 90f -> Color(0xFF4CAF50) // Green
+        else -> Color(0xFF2E7D32)      // Dark Green
     }
 }
-
 @Composable
 fun GameCard(
     game: GameApp,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
+    val scale by animateFloatAsState(
+        targetValue = if (isSelected) 1.05f else 1f,
+        animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f),
+        label = "scale"
+    )
+
     Column(
         modifier = Modifier
             .width(130.dp)
+            .graphicsLayer(scaleX = scale, scaleY = scale)
             .clip(RoundedCornerShape(24.dp))
             .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
             .clickable { onClick() }

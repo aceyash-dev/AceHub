@@ -5,6 +5,7 @@ import android.content.*
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.*
+import android.util.Log
 import android.view.*
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.foundation.layout.Box
@@ -18,14 +19,23 @@ import kotlin.math.roundToInt
 import androidx.compose.material3.MaterialTheme
 import androidx.core.app.NotificationCompat
 import com.ace.hub.data.MonitorData
+import com.ace.hub.data.UserPreferences
 import com.ace.hub.ui.overlay.OverlayContent
+import com.ace.hub.ui.theme.AceHubTheme
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 
-class OverlayService : Service() {
+class OverlayService : LifecycleService() {
 
     private lateinit var windowManager: WindowManager
     private lateinit var overlayView: ComposeView
+    private lateinit var userPrefs: UserPreferences
     private val monitorData = MutableStateFlow(MonitorData())
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -50,8 +60,31 @@ class OverlayService : Service() {
     private var startTime: Long = 0L
     private var gamePackageName: String? = null
     private var overlayAdded = false
+    private var isOverlayVisible = true
+
+    override fun onCreate() {
+        super.onCreate()
+        userPrefs = UserPreferences(this)
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val action = intent?.action
+        if (action == ACTION_STOP) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (action == ACTION_HIDE) {
+            isOverlayVisible = !isOverlayVisible
+            if (::overlayView.isInitialized) {
+                overlayView.visibility = if (isOverlayVisible) View.VISIBLE else View.GONE
+            }
+            updateNotification()
+            return START_STICKY
+        }
+
+        super.onStartCommand(intent, flags, startId)
+        Log.d("AceHub", "OverlayService started")
+        
         val newPackageName = intent?.getStringExtra("package_name")
         if (newPackageName != null && newPackageName != gamePackageName) {
             gamePackageName = newPackageName
@@ -64,7 +97,7 @@ class OverlayService : Service() {
             setupComposeOverlay()
             bindToMonitoringService()
             
-            android.widget.Toast.makeText(this, "AceHub Overlay Active", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(this, "AceHub is monitoring your game performance...", android.widget.Toast.LENGTH_SHORT).show()
             
             // Timer for notification
             serviceScope.launch {
@@ -78,34 +111,80 @@ class OverlayService : Service() {
         return START_STICKY
     }
 
-    override fun onCreate() {
-        super.onCreate()
+    private fun updateNotification() {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.notify(2, createNotification())
     }
 
-    private fun updateNotification() {
+    private fun createNotification(): Notification {
         val elapsedMillis = System.currentTimeMillis() - startTime
         val seconds = (elapsedMillis / 1000) % 60
         val minutes = (elapsedMillis / 1000 / 60) % 60
         val hours = (elapsedMillis / 1000 / 3600)
         val timeString = String.format("%02d:%02d:%02d", hours, minutes, seconds)
-
-        val notification = NotificationCompat.Builder(this, "acehub_overlay")
-            .setContentTitle("Playing Time")
-            .setContentText(timeString)
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .setOngoing(true)
-            .build()
         
-        startForeground(2, notification)
+        val appName = getAppName(gamePackageName)
+        val data = monitorData.value
+        
+        val stopIntent = Intent(this, OverlayService::class.java).apply { action = ACTION_STOP }
+        val stopPendingIntent = PendingIntent.getService(this, 0, stopIntent, PendingIntent.FLAG_IMMUTABLE)
+
+        val hideIntent = Intent(this, OverlayService::class.java).apply { action = ACTION_HIDE }
+        val hidePendingIntent = PendingIntent.getService(this, 1, hideIntent, PendingIntent.FLAG_IMMUTABLE)
+
+        val openIntent = Intent(this, com.ace.hub.MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val openPendingIntent = PendingIntent.getActivity(this, 2, openIntent, PendingIntent.FLAG_IMMUTABLE)
+
+        return NotificationCompat.Builder(this, "acehub_overlay")
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentTitle("🎮 AceHub Active")
+            .setContentText("$appName • $timeString")
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText(
+                        """
+                        FPS: ${data.fps.toInt()} • CPU: ${data.cpuUsage.toInt()}% • RAM: ${data.ramUsedMB} MB
+                        GPU: ${data.gpuUsage.toInt()}%
+                        Session: $timeString
+                        """.trimIndent()
+                    )
+            )
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
+            .addAction(
+                if (isOverlayVisible) android.R.drawable.ic_menu_view else android.R.drawable.ic_menu_add, 
+                if (isOverlayVisible) "Hide Overlay" else "Show Overlay", 
+                hidePendingIntent
+            )
+            .addAction(android.R.drawable.ic_menu_send, "Open AceHub", openPendingIntent)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .build()
+    }
+
+    private fun getAppName(packageName: String?): String {
+        if (packageName == null) return "Gaming Session"
+        return try {
+            packageManager.getApplicationLabel(
+                packageManager.getApplicationInfo(packageName, 0)
+            ).toString()
+        } catch (_: Exception) {
+            "Gaming Session"
+        }
     }
 
     private fun setupComposeOverlay() {
-        overlayView = ComposeView(this)
-        var offsetX by mutableStateOf(0f)
-        var offsetY by mutableStateOf(0f)
+        overlayView = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(this@OverlayService)
+        }
 
         overlayView.setContent {
-            MaterialTheme {
+            var offsetX by remember { mutableFloatStateOf(0f) }
+            var offsetY by remember { mutableFloatStateOf(0f) }
+            
+            AceHubTheme {
                 var isExpanded by remember { mutableStateOf(false) }
                 val data by monitorData.collectAsState()
                 
@@ -148,7 +227,13 @@ class OverlayService : Service() {
             y = 100
         }
 
-        windowManager.addView(overlayView, params)
+        Log.d("AceHub", "Creating overlay")
+        try {
+            windowManager.addView(overlayView, params)
+            Log.d("AceHub", "Overlay added")
+        } catch (e: Exception) {
+            Log.e("AceHub", "Failed to add overlay view", e)
+        }
     }
 
     private fun startForegroundWithNotification() {
@@ -157,10 +242,8 @@ class OverlayService : Service() {
             val channel = NotificationChannel(channelId, "AceHub Overlay", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
-        val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("AceHub Overlay")
-            .setSmallIcon(android.R.drawable.ic_menu_info_details)
-            .build()
+        
+        val notification = createNotification()
             
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(2, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -180,5 +263,8 @@ class OverlayService : Service() {
         serviceScope.cancel()
     }
 
-    override fun onBind(intent: Intent?) = null
+    companion object {
+        private const val ACTION_STOP = "com.ace.hub.ACTION_STOP"
+        private const val ACTION_HIDE = "com.ace.hub.ACTION_HIDE"
+    }
 }

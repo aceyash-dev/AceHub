@@ -11,12 +11,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ace.hub.data.GameApp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -27,7 +30,12 @@ fun AppPickerSheet(
     onDismiss: () -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    val filteredApps = apps.filter { it.appName.contains(searchQuery, ignoreCase = true) }
+    var showPackages by remember { mutableStateOf(false) }
+
+    val filteredApps = apps.filter { 
+        it.appName.contains(searchQuery, ignoreCase = true) || 
+        (showPackages && it.packageName.contains(searchQuery, ignoreCase = true))
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -36,7 +44,30 @@ fun AppPickerSheet(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         dragHandle = { BottomSheetDefaults.DragHandle() }
     ) {
-        Column(modifier = Modifier.padding(16.dp).fillMaxHeight(0.7f)) {
+        Column(modifier = Modifier.padding(16.dp).fillMaxHeight(0.8f)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Select Game", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Show Packages", style = MaterialTheme.typography.labelSmall)
+                    Spacer(Modifier.width(8.dp))
+                    Switch(
+                        checked = showPackages,
+                        onCheckedChange = { showPackages = it },
+                        modifier = Modifier.scale(0.7f),
+                        thumbContent = if (showPackages) {
+                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(SwitchDefaults.IconSize)) }
+                        } else {
+                            { Icon(Icons.Default.Close, null, modifier = Modifier.size(SwitchDefaults.IconSize)) }
+                        }
+                    )
+                }
+            }
+
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },

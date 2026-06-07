@@ -14,10 +14,6 @@ class UserPreferences(context: Context) {
         get() = prefs.getBoolean("use_system_theme", true)
         set(value) = prefs.edit().putBoolean("use_system_theme", value).apply()
 
-    var customSeedColor: Int
-        get() = prefs.getInt("custom_seed_color", 0xFF6750A4.toInt())
-        set(value) = prefs.edit().putInt("custom_seed_color", value).apply()
-
     var isUsageAnalyticsEnabled: Boolean
         get() = prefs.getBoolean("usage_analytics_enabled", true)
         set(value) = prefs.edit().putBoolean("usage_analytics_enabled", value).apply()

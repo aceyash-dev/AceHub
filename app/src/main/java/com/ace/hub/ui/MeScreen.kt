@@ -62,6 +62,14 @@ fun MeScreen(
     }
 
     val context = LocalContext.current
+    val updateUrl by viewModel.newUpdateAvailable.collectAsState()
+    
+    LaunchedEffect(updateUrl) {
+        if (updateUrl != null) {
+            android.widget.Toast.makeText(context, "An Update is available", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
     val pfpFile = File(context.filesDir, "profile_pic.jpg")
     
     var pfpUri by remember { mutableStateOf<Uri?>(if (pfpFile.exists()) Uri.fromFile(pfpFile) else null) }
@@ -317,7 +325,7 @@ fun MeScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         // Section: Links
-        ReefSectionHeader("Links")
+        ReefSectionHeader("Links & Updates")
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
@@ -325,8 +333,8 @@ fun MeScreen(
         ) {
             Column {
                 ListItem(
-                    headlineContent = { Text("GitHub") },
-                    supportingContent = { Text("@aceyash-dev") },
+                    headlineContent = { Text("GitHub Repository") },
+                    supportingContent = { Text("Source code and issues") },
                     leadingContent = { 
                         Icon(
                             painter = painterResource(id = R.drawable.ic_github), 
@@ -336,25 +344,50 @@ fun MeScreen(
                     },
                     trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
                     modifier = Modifier.clickable {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/aceyash-dev"))
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/aceyash-dev/AceHub"))
                         context.startActivity(intent)
                     },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
                 ListItem(
-                    headlineContent = { Text("Play Store") },
-                    supportingContent = { Text("Check for updates") },
+                    headlineContent = { Text("GitHub Releases") },
+                    supportingContent = { 
+                        if (updateUrl != null) {
+                            Text("New update available!", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        } else {
+                            Text("Check for updates")
+                        }
+                    },
                     leadingContent = { 
                         Icon(
-                            painter = painterResource(id = R.drawable.ic_playstore), 
+                            Icons.Rounded.Info, 
                             contentDescription = null,
                             modifier = Modifier.size(24.dp)
                         ) 
                     },
-                    trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+                    trailingContent = { 
+                        if (updateUrl != null) {
+                            Button(
+                                onClick = {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateUrl))
+                                    context.startActivity(intent)
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                Text("Go")
+                            }
+                        } else {
+                            Icon(Icons.Rounded.ChevronRight, null)
+                        }
+                    },
                     modifier = Modifier.clickable {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${context.packageName}"))
-                        context.startActivity(intent)
+                        if (updateUrl == null) {
+                            viewModel.checkForUpdates()
+                        } else {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateUrl))
+                            context.startActivity(intent)
+                        }
                     },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
@@ -364,6 +397,8 @@ fun MeScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         // About
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        val versionName = packageInfo.versionName
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
@@ -371,7 +406,7 @@ fun MeScreen(
         ) {
             ListItem(
                 headlineContent = { Text("About AceHub") },
-                supportingContent = { Text("Version 1.0.0 • ©Ace Horizon 2026") },
+                supportingContent = { Text("Version $versionName • ©Ace Horizon 2026") },
                 leadingContent = { Icon(Icons.Rounded.Info, null) },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
             )
@@ -383,15 +418,6 @@ fun MeScreen(
     if (showUsernameDialog) {
         AlertDialog(
             onDismissRequest = { showUsernameDialog = false },
-            title = { Text("Edit Username") },
-            text = {
-                OutlinedTextField(
-                    value = tempUsername,
-                    onValueChange = { tempUsername = it },
-                    label = { Text("Username") },
-                    singleLine = true
-                )
-            },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.updateUsername(tempUsername)
@@ -404,7 +430,28 @@ fun MeScreen(
                 TextButton(onClick = { showUsernameDialog = false }) {
                     Text("Cancel")
                 }
-            }
+            },
+            title = { Text("Edit Username") },
+            text = {
+                Column {
+                    Text(
+                        "Change how you appear in AceHub.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                    OutlinedTextField(
+                        value = tempUsername,
+                        onValueChange = { tempUsername = it },
+                        label = { Text("Username") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                }
+            },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     }
 }
@@ -424,7 +471,16 @@ fun StatCard(
         Column(modifier = Modifier.padding(16.dp)) {
             Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
             Spacer(modifier = Modifier.height(12.dp))
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            AnimatedContent(
+                targetState = value,
+                transitionSpec = {
+                    slideInVertically { height -> height } + fadeIn() togetherWith
+                    slideOutVertically { height -> -height } + fadeOut()
+                },
+                label = "stat_value"
+            ) { targetValue ->
+                Text(targetValue, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
             Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
