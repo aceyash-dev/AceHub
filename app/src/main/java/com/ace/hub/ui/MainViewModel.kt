@@ -14,6 +14,7 @@ import com.ace.hub.data.*
 import com.ace.hub.service.MonitoringService
 import com.ace.hub.service.OverlayService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +36,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _customSeedColor = MutableStateFlow(userPrefs.customSeedColor)
     val customSeedColor: StateFlow<Int> = _customSeedColor.asStateFlow()
 
+    private val _isUsageAnalyticsEnabled = MutableStateFlow(userPrefs.isUsageAnalyticsEnabled)
+    val isUsageAnalyticsEnabled: StateFlow<Boolean> = _isUsageAnalyticsEnabled.asStateFlow()
+
+    private val _isOverlayEnabled = MutableStateFlow(userPrefs.isOverlayEnabled)
+    val isOverlayEnabled: StateFlow<Boolean> = _isOverlayEnabled.asStateFlow()
+
+    private val _isAutoBoostEnabled = MutableStateFlow(userPrefs.isAutoBoostEnabled)
+    val isAutoBoostEnabled: StateFlow<Boolean> = _isAutoBoostEnabled.asStateFlow()
+
+    private val _pinnedGamesPackageNames = MutableStateFlow(userPrefs.pinnedGames)
+    val pinnedGamesPackageNames: StateFlow<Set<String>> = _pinnedGamesPackageNames.asStateFlow()
+
+    private val _recentGamesPackageNames = MutableStateFlow(userPrefs.recentGames)
+    val recentGamesPackageNames: StateFlow<List<String>> = _recentGamesPackageNames.asStateFlow()
+
+    private val _profileImageUri = MutableStateFlow(userPrefs.profileImageUri)
+    val profileImageUri: StateFlow<String?> = _profileImageUri.asStateFlow()
+
     fun updateUsername(name: String) {
         _username.value = name
         userPrefs.username = name
@@ -48,6 +67,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateCustomSeedColor(color: Int) {
         _customSeedColor.value = color
         userPrefs.customSeedColor = color
+    }
+
+    fun updateUsageAnalytics(enabled: Boolean) {
+        _isUsageAnalyticsEnabled.value = enabled
+        userPrefs.isUsageAnalyticsEnabled = enabled
+    }
+
+    fun updateOverlayEnabled(enabled: Boolean) {
+        _isOverlayEnabled.value = enabled
+        userPrefs.isOverlayEnabled = enabled
+    }
+
+    fun updateAutoBoost(enabled: Boolean) {
+        _isAutoBoostEnabled.value = enabled
+        userPrefs.isAutoBoostEnabled = enabled
+    }
+
+    fun togglePinnedGame(packageName: String) {
+        val current = _pinnedGamesPackageNames.value.toMutableSet()
+        if (current.contains(packageName)) {
+            current.remove(packageName)
+        } else {
+            current.add(packageName)
+        }
+        _pinnedGamesPackageNames.value = current
+        userPrefs.pinnedGames = current
+    }
+
+    fun addToRecentGames(packageName: String) {
+        val current = _recentGamesPackageNames.value.toMutableList()
+        current.remove(packageName)
+        current.add(0, packageName)
+        val limited = current.take(20)
+        _recentGamesPackageNames.value = limited
+        userPrefs.recentGames = limited
+    }
+
+    fun updateProfileImage(uri: String?) {
+        _profileImageUri.value = uri
+        userPrefs.profileImageUri = uri
+    }
+
+    fun hasUsagePermission(): Boolean {
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
+        val time = System.currentTimeMillis()
+        val stats = usageStatsManager.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, time - 1000 * 60, time)
+        return stats?.isNotEmpty() == true
     }
 
     private val _monitorData = MutableStateFlow(MonitorData())
@@ -75,6 +141,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch {
                 monitoringService?.monitorData?.collect { data ->
                     _monitorData.value = data
+                    
+                    // Detect games launched outside AceHub
+                    data.foregroundPackage?.let { pkg ->
+                        if (pkg != context.packageName && _games.value.any { it.packageName == pkg }) {
+                            addToRecentGames(pkg)
+                        }
+                    }
                 }
             }
         }
@@ -102,13 +175,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadGames() {
         viewModelScope.launch(Dispatchers.IO) {
-            _games.value = gameRepository.getInstalledGames()
-            _allApps.value = gameRepository.getAllApps()
+            val gamesDeferred = async { gameRepository.getInstalledGames() }
+            val appsDeferred = async { gameRepository.getAllApps() }
+            
+            _games.value = gamesDeferred.await()
+            _allApps.value = appsDeferred.await()
         }
     }
 
     fun launchGameWithOverlay(context: Context, packageName: String) {
-        if (Settings.canDrawOverlays(context)) {
+        addToRecentGames(packageName)
+        
+        if (_isAutoBoostEnabled.value) {
+            autoBoost()
+        }
+
+        if (_isOverlayEnabled.value && Settings.canDrawOverlays(context)) {
             val overlayIntent = Intent(context, OverlayService::class.java).apply {
                 putExtra("package_name", packageName)
             }
@@ -117,18 +199,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 context.startService(overlayIntent)
             }
-            gameRepository.launchGame(packageName)
-        } else {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:${context.packageName}")
-            )
-            context.startActivity(intent)
+        }
+        
+        gameRepository.launchGame(packageName)
+    }
+
+    private fun autoBoost() {
+        // Logic to clear background processes or optimize performance
+        viewModelScope.launch(Dispatchers.Default) {
+            val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            activityManager.runningAppProcesses?.forEach { process ->
+                process.pkgList?.forEach { pkg ->
+                    if (pkg != context.packageName) {
+                        try {
+                            activityManager.killBackgroundProcesses(pkg)
+                        } catch (_: Exception) {}
+                    }
+                }
+            }
         }
     }
 
     fun getPlayTime(packageName: String): Long {
         return gameRepository.getAppPlayTime(packageName)
+    }
+
+    fun getTotalPlayTime(): Long {
+        return gameRepository.getTotalPlayTime()
+    }
+
+    fun getWeeklyPlaytime(): List<Float> {
+        return gameRepository.getWeeklyPlaytime()
     }
 
     override fun onCleared() {

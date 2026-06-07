@@ -17,4 +17,28 @@ class UserPreferences(context: Context) {
     var customSeedColor: Int
         get() = prefs.getInt("custom_seed_color", 0xFF6750A4.toInt())
         set(value) = prefs.edit().putInt("custom_seed_color", value).apply()
+
+    var isUsageAnalyticsEnabled: Boolean
+        get() = prefs.getBoolean("usage_analytics_enabled", true)
+        set(value) = prefs.edit().putBoolean("usage_analytics_enabled", value).apply()
+
+    var isOverlayEnabled: Boolean
+        get() = prefs.getBoolean("overlay_enabled", true)
+        set(value) = prefs.edit().putBoolean("overlay_enabled", value).apply()
+
+    var isAutoBoostEnabled: Boolean
+        get() = prefs.getBoolean("auto_boost_enabled", false)
+        set(value) = prefs.edit().putBoolean("auto_boost_enabled", value).apply()
+
+    var pinnedGames: Set<String>
+        get() = prefs.getStringSet("pinned_games", emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet("pinned_games", value).apply()
+
+    var recentGames: List<String>
+        get() = prefs.getString("recent_games", "")?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+        set(value) = prefs.edit().putString("recent_games", value.joinToString(",")).apply()
+
+    var profileImageUri: String?
+        get() = prefs.getString("profile_image_uri", null)
+        set(value) = prefs.edit().putString("profile_image_uri", value).apply()
 }

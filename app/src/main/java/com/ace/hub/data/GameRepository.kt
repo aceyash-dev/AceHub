@@ -133,4 +133,54 @@ class GameRepository(private val context: Context) {
 
         return stats?.find { it.packageName == packageName }?.totalTimeInForeground ?: 0L
     }
+
+    fun getTotalPlayTime(): Long {
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val calendar = Calendar.getInstance()
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+
+        val stats = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_BEST,
+            calendar.timeInMillis,
+            System.currentTimeMillis()
+        )
+        
+        val gamePackages = getInstalledGames().map { it.packageName }.toSet()
+        return stats?.filter { it.packageName in gamePackages }?.sumOf { it.totalTimeInForeground } ?: 0L
+    }
+
+    fun getWeeklyPlaytime(): List<Float> {
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val gamePackages = getInstalledGames().map { it.packageName }.toSet()
+        val weeklyStats = mutableListOf<Float>()
+
+        for (i in 6 downTo 0) {
+            val startCalendar = Calendar.getInstance()
+            startCalendar.add(Calendar.DAY_OF_YEAR, -i)
+            startCalendar.set(Calendar.HOUR_OF_DAY, 0)
+            startCalendar.set(Calendar.MINUTE, 0)
+            startCalendar.set(Calendar.SECOND, 0)
+            startCalendar.set(Calendar.MILLISECOND, 0)
+
+            val endCalendar = Calendar.getInstance()
+            endCalendar.add(Calendar.DAY_OF_YEAR, -i)
+            endCalendar.set(Calendar.HOUR_OF_DAY, 23)
+            endCalendar.set(Calendar.MINUTE, 59)
+            endCalendar.set(Calendar.SECOND, 59)
+            endCalendar.set(Calendar.MILLISECOND, 999)
+
+            val stats = usageStatsManager.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY,
+                startCalendar.timeInMillis,
+                endCalendar.timeInMillis
+            )
+
+            val dailyTotal = stats?.filter { it.packageName in gamePackages }?.sumOf { it.totalTimeInForeground } ?: 0L
+            weeklyStats.add(dailyTotal / (1000f * 60f)) // Convert to minutes
+        }
+        return weeklyStats
+    }
 }

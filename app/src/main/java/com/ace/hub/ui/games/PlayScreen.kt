@@ -48,7 +48,12 @@ fun PlayScreen(
     val context = LocalContext.current
     val monitorData by viewModel.monitorData.collectAsState()
     val allApps by viewModel.allApps.collectAsState()
-    var pinnedGames by remember { mutableStateOf<List<GameApp>>(emptyList()) }
+    val pinnedGamesPackageNames by viewModel.pinnedGamesPackageNames.collectAsState()
+    
+    val pinnedGames = remember(allApps, pinnedGamesPackageNames) {
+        allApps.filter { it.packageName in pinnedGamesPackageNames }
+    }
+
     var selectedGame by remember { mutableStateOf<GameApp?>(null) }
     var showAppPicker by remember { mutableStateOf(false) }
     var selectedGamePlayTime by remember { mutableLongStateOf(0L) }
@@ -244,13 +249,13 @@ fun PlayScreen(
                                 "${monitorData.fps.toInt()} FPS",
                                 style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                                color = getFpsColor(monitorData.fps)
                             )
                         }
                         Icon(
                             Icons.Default.Speed,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                            tint = getFpsColor(monitorData.fps).copy(alpha = 0.5f),
                             modifier = Modifier.size(40.dp)
                         )
                     }
@@ -258,13 +263,14 @@ fun PlayScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     // Vico Chart
+                    val fpsColor = getFpsColor(monitorData.fps)
                     modelState.value?.let { model ->
                         CartesianChartHost(
                             chart = rememberCartesianChart(
                                 rememberLineCartesianLayer(
                                     lines = listOf(
                                         rememberLineSpec(
-                                            shader = DynamicShader.color(MaterialTheme.colorScheme.primary),
+                                            shader = DynamicShader.color(fpsColor),
                                             thickness = 3.dp
                                         )
                                     )
@@ -335,7 +341,7 @@ fun PlayScreen(
             AppPickerSheet(
                 apps = allApps,
                 onAppSelected = {
-                    pinnedGames = (pinnedGames + it).distinctBy { g -> g.packageName }
+                    viewModel.togglePinnedGame(it.packageName)
                     showAppPicker = false
                 },
                 onDismiss = { showAppPicker = false }
@@ -351,6 +357,18 @@ fun formatPlayTime(millis: Long): String {
 }
 
 @Composable
+fun getFpsColor(fps: Float): Color {
+    return when {
+        fps < 30f -> Color(0xFFF44336) // Red
+        fps < 40f -> Color(0xFFFF9800) // Orange
+        fps < 50f -> Color(0xFFFFEB3B) // Yellow
+        fps < 60f -> Color(0xFF8BC34A) // Light Green
+        fps < 90f -> Color(0xA7DE0000) // Green
+        else -> Color(0xFF388E3C)      // Dark Green
+    }
+}
+
+@Composable
 fun GameCard(
     game: GameApp,
     isSelected: Boolean,
@@ -358,8 +376,8 @@ fun GameCard(
 ) {
     Column(
         modifier = Modifier
-            .width(100.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .width(130.dp)
+            .clip(RoundedCornerShape(24.dp))
             .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
             .clickable { onClick() }
             .padding(8.dp),
@@ -367,11 +385,11 @@ fun GameCard(
     ) {
         Box(
             modifier = Modifier
-                .size(72.dp)
-                .clip(RoundedCornerShape(18.dp))
+                .size(88.dp)
+                .clip(RoundedCornerShape(22.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .then(
-                    if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp))
+                    if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(22.dp))
                     else Modifier
                 ),
             contentAlignment = Alignment.Center
@@ -379,13 +397,13 @@ fun GameCard(
             Image(
                 painter = rememberDrawablePainter(drawable = game.icon),
                 contentDescription = null,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(56.dp)
             )
         }
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = game.appName,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelLarge,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
             maxLines = 1,
             color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,

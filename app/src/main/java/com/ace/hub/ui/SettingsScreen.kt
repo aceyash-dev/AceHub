@@ -10,7 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ColorLens
-import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,16 +21,28 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.core.graphics.toColorInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    username: String,
+    onUsernameChanged: (String) -> Unit,
     useSystemTheme: Boolean,
     onUseSystemThemeChanged: (Boolean) -> Unit,
     customSeedColor: Int,
-    onCustomSeedColorChanged: (Int) -> Unit
+    onCustomSeedColorChanged: (Int) -> Unit,
+    isUsageAnalyticsEnabled: Boolean,
+    onUsageAnalyticsEnabledChanged: (Boolean) -> Unit,
+    hasUsagePermission: Boolean,
+    isOverlayEnabled: Boolean,
+    onOverlayEnabledChanged: (Boolean) -> Unit,
+    isAutoBoostEnabled: Boolean,
+    onAutoBoostEnabledChanged: (Boolean) -> Unit
 ) {
     var showColorPicker by remember { mutableStateOf(false) }
+    var showUsernameDialog by remember { mutableStateOf(false) }
+    var tempUsername by remember { mutableStateOf(username) }
 
     Column(
         modifier = Modifier
@@ -45,6 +57,38 @@ fun SettingsScreen(
         )
         
         Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "Profile",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        SettingsCard(onClick = { showUsernameDialog = true }) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Person, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text(
+                        text = "Username",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = if (username.isBlank()) "User" else username,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
         
         Text(
             text = "Appearance",
@@ -55,11 +99,7 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(16.dp))
         
         // Material You Style Toggle
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow
-        ) {
+        SettingsCard {
             Row(
                 modifier = Modifier
                     .padding(16.dp)
@@ -85,7 +125,7 @@ fun SettingsScreen(
                     thumbContent = if (useSystemTheme) {
                         {
                             Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Filled.ColorLens,
+                                imageVector = Icons.Filled.ColorLens,
                                 contentDescription = null,
                                 modifier = Modifier.size(SwitchDefaults.IconSize)
                             )
@@ -98,12 +138,8 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(12.dp))
         
         // Custom Theme Color Picker
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { showColorPicker = true },
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow
+        SettingsCard(
+            onClick = { showColorPicker = true }
         ) {
             Row(
                 modifier = Modifier.padding(16.dp),
@@ -131,6 +167,42 @@ fun SettingsScreen(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        Text(
+            text = "Features",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+        
+        Spacer(modifier = Modifier.height(16.dp))
+
+        SettingsToggle(
+            title = "Usage Analytics",
+            description = if (hasUsagePermission) "Track game play time and performance" else "Permission Required",
+            checked = isUsageAnalyticsEnabled,
+            onCheckedChange = onUsageAnalyticsEnabledChanged,
+            error = !hasUsagePermission
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        SettingsToggle(
+            title = "Floating Overlay",
+            description = "Show FPS and stats while gaming",
+            checked = isOverlayEnabled,
+            onCheckedChange = onOverlayEnabledChanged
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        SettingsToggle(
+            title = "Auto Boost",
+            description = "Optimize device performance on launch",
+            checked = isAutoBoostEnabled,
+            onCheckedChange = onAutoBoostEnabledChanged
+        )
         
         if (showColorPicker) {
             ColorPickerDial(
@@ -140,6 +212,92 @@ fun SettingsScreen(
                     showColorPicker = false
                 },
                 onDismiss = { showColorPicker = false }
+            )
+        }
+
+        if (showUsernameDialog) {
+            AlertDialog(
+                onDismissRequest = { showUsernameDialog = false },
+                title = { Text("Edit Username") },
+                text = {
+                    OutlinedTextField(
+                        value = tempUsername,
+                        onValueChange = { tempUsername = it },
+                        label = { Text("Username") },
+                        singleLine = true
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onUsernameChanged(tempUsername)
+                        showUsernameDialog = false
+                    }) {
+                        Text("Save")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showUsernameDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(100.dp))
+    }
+}
+
+@Composable
+fun SettingsCard(
+    onClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        content = content
+    )
+}
+
+@Composable
+fun SettingsToggle(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    error: Boolean = false
+) {
+    SettingsCard {
+        Row(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                colors = if (error) SwitchDefaults.colors(
+                    checkedThumbColor = MaterialTheme.colorScheme.error,
+                    checkedTrackColor = MaterialTheme.colorScheme.errorContainer
+                ) else SwitchDefaults.colors()
             )
         }
     }
@@ -189,7 +347,7 @@ fun ColorPickerDial(
                         hexText = it
                         if (it.startsWith("#") && (it.length == 7 || it.length == 9)) {
                             try {
-                                onColorSelected(Color(android.graphics.Color.parseColor(it)))
+                                onColorSelected(Color(it.toColorInt()))
                             } catch (_: Exception) {}
                         }
                     },

@@ -38,6 +38,9 @@ fun Navigation(viewModel: MainViewModel) {
     val useSystemTheme by viewModel.useSystemTheme.collectAsState()
     val username by viewModel.username.collectAsState()
     val customSeedColor by viewModel.customSeedColor.collectAsState()
+    val isUsageAnalyticsEnabled by viewModel.isUsageAnalyticsEnabled.collectAsState()
+    val isOverlayEnabled by viewModel.isOverlayEnabled.collectAsState()
+    val isAutoBoostEnabled by viewModel.isAutoBoostEnabled.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var showMeScreen by remember { mutableStateOf(false) }
@@ -153,23 +156,18 @@ fun Navigation(viewModel: MainViewModel) {
                     targetState = showMeScreen,
                     transitionSpec = {
                         if (targetState) {
-                            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Up, animationSpec = tween(500)) + fadeIn() togetherWith
-                                    fadeOut(animationSpec = tween(300))
+                            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Up, animationSpec = tween(300)) + fadeIn() togetherWith
+                                    fadeOut(animationSpec = tween(200))
                         } else {
-                            fadeIn(animationSpec = tween(300)) togetherWith
-                                    slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Down, animationSpec = tween(500)) + fadeOut()
+                            fadeIn(animationSpec = tween(200)) togetherWith
+                                    slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Down, animationSpec = tween(300)) + fadeOut()
                         }
                     },
                     label = "me_screen_transition"
                 ) { isMeScreen ->
                     if (isMeScreen) {
                         Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-                            MeScreen(
-                                useSystemTheme = useSystemTheme,
-                                onUseSystemThemeChanged = { viewModel.updateSystemTheme(it) },
-                                username = username,
-                                onUsernameChanged = { viewModel.updateUsername(it) }
-                            )
+                            MeScreen(viewModel = viewModel)
                             FilledIconButton(
                                 onClick = { showMeScreen = false },
                                 modifier = Modifier
@@ -187,8 +185,8 @@ fun Navigation(viewModel: MainViewModel) {
                             targetState = selectedTab,
                             transitionSpec = {
                                 val direction = if (targetState > initialState) AnimatedContentTransitionScope.SlideDirection.Left else AnimatedContentTransitionScope.SlideDirection.Right
-                                slideIntoContainer(direction, animationSpec = tween(400)) + fadeIn() togetherWith
-                                        slideOutOfContainer(direction, animationSpec = tween(400)) + fadeOut()
+                                slideIntoContainer(direction, animationSpec = tween(300)) + fadeIn() togetherWith
+                                        slideOutOfContainer(direction, animationSpec = tween(300)) + fadeOut()
                             },
                             label = "tab_transition"
                         ) { targetTab ->
@@ -198,12 +196,21 @@ fun Navigation(viewModel: MainViewModel) {
                                     username = username
                                 )
                             } else {
-                                SettingsScreen(
-                                    useSystemTheme = useSystemTheme,
-                                    onUseSystemThemeChanged = { viewModel.updateSystemTheme(it) },
-                                    customSeedColor = customSeedColor,
-                                    onCustomSeedColorChanged = { viewModel.updateCustomSeedColor(it) }
-                                )
+                                    SettingsScreen(
+                                        username = username,
+                                        onUsernameChanged = { viewModel.updateUsername(it) },
+                                        useSystemTheme = useSystemTheme,
+                                        onUseSystemThemeChanged = { viewModel.updateSystemTheme(it) },
+                                        customSeedColor = customSeedColor,
+                                        onCustomSeedColorChanged = { viewModel.updateCustomSeedColor(it) },
+                                        isUsageAnalyticsEnabled = isUsageAnalyticsEnabled,
+                                        onUsageAnalyticsEnabledChanged = { viewModel.updateUsageAnalytics(it) },
+                                        hasUsagePermission = viewModel.hasUsagePermission(),
+                                        isOverlayEnabled = isOverlayEnabled,
+                                        onOverlayEnabledChanged = { viewModel.updateOverlayEnabled(it) },
+                                        isAutoBoostEnabled = isAutoBoostEnabled,
+                                        onAutoBoostEnabledChanged = { viewModel.updateAutoBoost(it) }
+                                    )
                             }
                         }
                     }

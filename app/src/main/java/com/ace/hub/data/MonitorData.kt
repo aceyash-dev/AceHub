@@ -20,7 +20,8 @@ data class MonitorData(
     val isCharging: Boolean = false,
     val batteryHealth: String = "Unknown",
     val thermalStatus: Int = 0,
-    val thermalStatusText: String = "Normal"
+    val thermalStatusText: String = "Normal",
+    val foregroundPackage: String? = null
 )
 
 data class DeviceInfo(

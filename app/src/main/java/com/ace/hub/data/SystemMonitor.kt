@@ -245,6 +245,7 @@ class SystemMonitor(private val context: Context) {
         val batteryInfo = getBatteryInfo()
         val (gpuRenderer, gpuVendor, gpuVersion) = getGpuInfo()
         val (thermalStatusCode, thermalStatusText) = getThermalStatus()
+        val foregroundPackage = getRecentForegroundPackage()
 
         return MonitorData(
             cpuUsage = cpuUsage,
@@ -260,7 +261,8 @@ class SystemMonitor(private val context: Context) {
             isCharging = batteryInfo.isCharging,
             batteryHealth = batteryInfo.healthText,
             thermalStatus = thermalStatusCode,
-            thermalStatusText = thermalStatusText
+            thermalStatusText = thermalStatusText,
+            foregroundPackage = foregroundPackage
         )
     }
 
@@ -303,5 +305,20 @@ class SystemMonitor(private val context: Context) {
             screenResolution = screenResolution,
             screenDensity = screenDensity
         )
+    }
+
+    fun getRecentForegroundPackage(): String? {
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
+        val time = System.currentTimeMillis()
+        val events = usageStatsManager.queryEvents(time - 2000, time)
+        val event = android.app.usage.UsageEvents.Event()
+        var lastPackage: String? = null
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.eventType == android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                lastPackage = event.packageName
+            }
+        }
+        return lastPackage
     }
 }
