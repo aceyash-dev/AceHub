@@ -74,4 +74,8 @@ class UserPreferences(context: Context) {
     var totalPlaytimeMinutes: Long
         get() = prefs.getLong("total_playtime_minutes", 0L)
         set(value) = prefs.edit().putLong("total_playtime_minutes", value).apply()
+
+    var isGoogleLinked: Boolean
+        get() = prefs.getBoolean("is_google_linked", false)
+        set(value) = prefs.edit().putBoolean("is_google_linked", value).apply()
 }

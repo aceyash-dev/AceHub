@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.net.Uri
+import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.util.Log
@@ -103,6 +104,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _showNameplate = MutableStateFlow(userPrefs.showNameplate)
     val showNameplate: StateFlow<Boolean> = _showNameplate.asStateFlow()
 
+    private val _isGoogleLinked = MutableStateFlow(userPrefs.isGoogleLinked)
+    val isGoogleLinked: StateFlow<Boolean> = _isGoogleLinked.asStateFlow()
+
     fun addXp(amount: Int) {
         _totalXp.value += amount
         userPrefs.totalXp = _totalXp.value
@@ -161,6 +165,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateBrightnessLock(enabled: Boolean) {
         _brightnessLock.value = enabled
         userPrefs.brightnessLock = enabled
+    }
+
+    fun linkGoogleAccount(success: Boolean) {
+        if (success) {
+            _isGoogleLinked.value = true
+            userPrefs.isGoogleLinked = true
+        }
     }
 
     private fun initBootTasks() {

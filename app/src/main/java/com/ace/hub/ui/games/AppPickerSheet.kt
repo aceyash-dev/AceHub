@@ -51,20 +51,7 @@ fun AppPickerSheet(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text("Select Game", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Show Packages", style = MaterialTheme.typography.labelSmall)
-                    Spacer(Modifier.width(8.dp))
-                    Switch(
-                        checked = showPackages,
-                        onCheckedChange = { showPackages = it },
-                        modifier = Modifier.scale(0.7f),
-                        thumbContent = if (showPackages) {
-                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(SwitchDefaults.IconSize)) }
-                        } else {
-                            { Icon(Icons.Default.Close, null, modifier = Modifier.size(SwitchDefaults.IconSize)) }
-                        }
-                    )
+
                 }
             }
 

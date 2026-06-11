@@ -2,6 +2,9 @@ package com.ace.hub.ui.overlay
 
 import android.graphics.drawable.Drawable
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +25,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -41,10 +45,17 @@ fun OverlayContent(
     val purpleContainer = Color(0xFF1D1B20)
     
     var expanded by remember { mutableStateOf(false) }
+    
+    val cardScale by animateFloatAsState(
+        targetValue = if (expanded) 1.02f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "CardScale"
+    )
 
     Card(
         modifier = Modifier
             .wrapContentSize()
+            .graphicsLayer(scaleX = cardScale, scaleY = cardScale)
             .clickable { expanded = !expanded },
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = purpleContainer.copy(alpha = 0.95f)),
@@ -86,13 +97,21 @@ fun OverlayContent(
                 // FPS Display
                 Column(horizontalAlignment = Alignment.Start) {
                     Row(verticalAlignment = Alignment.Bottom) {
-                        Text(
-                            text = "${monitorData.fps.toInt()}",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Black,
-                            color = Color.White,
-                            fontFamily = FontFamily.Monospace
-                        )
+                        AnimatedContent(
+                            targetState = monitorData.fps.toInt(),
+                            transitionSpec = {
+                                fadeIn() + slideInVertically { it / 2 } togetherWith fadeOut() + slideOutVertically { -it / 2 }
+                            },
+                            label = "FpsAnimation"
+                        ) { fps ->
+                            Text(
+                                text = "$fps",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Black,
+                                color = Color.White,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                         Text(
                             text = "FPS",
                             style = MaterialTheme.typography.labelSmall,
@@ -119,13 +138,13 @@ fun OverlayContent(
 
             AnimatedVisibility(
                 visible = expanded,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
+                enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
+                exit = shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeOut()
             ) {
                 Column(
                     modifier = Modifier
                         .padding(top = 12.dp)
-                        .width(200.dp),
+                        .width(210.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     HorizontalDivider(color = purplePrimary.copy(alpha = 0.2f), thickness = 1.dp)
@@ -158,7 +177,7 @@ fun OverlayContent(
                     ) {
                         OutlinedButton(
                             onClick = onGoToApp,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1.1f),
                             shape = RoundedCornerShape(12.dp),
                             contentPadding = PaddingValues(0.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = purplePrimary),
@@ -171,7 +190,7 @@ fun OverlayContent(
                         
                         Button(
                             onClick = onCloseOverlay,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(0.9f),
                             shape = RoundedCornerShape(12.dp),
                             contentPadding = PaddingValues(0.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.2f), contentColor = Color.Red)

@@ -62,6 +62,7 @@ fun MeScreen(
     val totalXp by viewModel.totalXp.collectAsState()
     val showGlowingRing by viewModel.showGlowingRing.collectAsState()
     val showNameplate by viewModel.showNameplate.collectAsState()
+    val isGoogleLinked by viewModel.isGoogleLinked.collectAsState()
 
     val level = remember(totalXp) {
         when {
@@ -283,6 +284,34 @@ fun MeScreen(
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+
+                    if (isGoogleLinked) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            color = Color(0xFF4285F4).copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4285F4).copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.VerifiedUser,
+                                    contentDescription = null,
+                                    tint = Color(0xFF4285F4),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    "Secured with Google",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFF4285F4),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
