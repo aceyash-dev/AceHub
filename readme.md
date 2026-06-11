@@ -1,8 +1,8 @@
 # AceHub
 
-<p align="center">
-  <img src="asset/ace.png" alt="AceHub Banner" width="100%">
-</p>
+<div align="center">
+  <img src="asset/ace.png" alt="AceHub" width="300" height="300">
+</div>
 
 <h3 align="center">
 A modern Android Game Hub & Booster built with Kotlin and Jetpack Compose.
