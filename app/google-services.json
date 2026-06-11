@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "1017523773217",
+    "firebase_url": "https://ace-horizon-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "ace-horizon",
+    "storage_bucket": "ace-horizon.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1017523773217:android:37f03abb12e17a552aa860",
+        "android_client_info": {
+          "package_name": "com.ace.hub"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1017523773217-el0kren1asmqovmjakvenrn68rqpmiaa.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCPGPJN8f_Z-annf0qNe2c3WMrAtthyvNQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1017523773217-el0kren1asmqovmjakvenrn68rqpmiaa.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

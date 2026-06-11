@@ -35,12 +35,6 @@ import com.ace.hub.R
 import com.ace.hub.data.GameApp
 import com.ace.hub.ui.MainViewModel
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
-import com.patrykandpatrick.vico.compose.cartesian.*
-import com.patrykandpatrick.vico.compose.cartesian.layer.*
-import com.patrykandpatrick.vico.compose.cartesian.axis.*
-import com.patrykandpatrick.vico.compose.common.shader.color
-import com.patrykandpatrick.vico.core.cartesian.data.*
-import com.patrykandpatrick.vico.core.common.shader.DynamicShader
 
 @Composable
 fun PlayScreen(
@@ -67,22 +61,10 @@ fun PlayScreen(
 
     val currentHour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
     val greeting = when (currentHour) {
-        in 5..11 -> "Good morning"
-        in 12..16 -> "Good afternoon"
-        else -> "Good evening"
-    }
-
-    // Vico data state
-    val modelState = remember { mutableStateOf<CartesianChartModel?>(null) }
-    LaunchedEffect(monitorData.fpsHistoryList) {
-        val points = monitorData.fpsHistoryList
-        if (points.isNotEmpty()) {
-            modelState.value = CartesianChartModel(
-                LineCartesianLayerModel.build {
-                    series(points)
-                }
-            )
-        }
+        in 4..10 -> "Good Morning"
+        in 11..15 -> "Good Afternoon"
+        in 16..19 -> "Good Evening"
+        else -> "Good Night"
     }
 
     Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
@@ -221,55 +203,6 @@ fun PlayScreen(
                                 text = "Playtime (last 7 days): ${formatPlayTime(selectedGamePlayTime)}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Performance Card (Simplified & Premium)
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                shape = RoundedCornerShape(32.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(28.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            "Real-time FPS",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            "${monitorData.fps.toInt()}",
-                            style = MaterialTheme.typography.displayMedium.copy(fontSize = 44.sp),
-                            fontWeight = FontWeight.Black,
-                            color = getFpsColor(monitorData.fps)
-                        )
-                    }
-                    
-                    Surface(
-                        shape = CircleShape,
-                        color = getFpsColor(monitorData.fps).copy(alpha = 0.12f),
-                        modifier = Modifier.size(72.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Default.Speed,
-                                contentDescription = null,
-                                tint = getFpsColor(monitorData.fps),
-                                modifier = Modifier.size(36.dp)
                             )
                         }
                     }

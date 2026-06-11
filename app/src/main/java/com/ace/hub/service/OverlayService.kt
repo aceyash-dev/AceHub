@@ -4,20 +4,18 @@ import android.app.*
 import android.content.*
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
+import android.graphics.drawable.Drawable
 import android.os.*
 import android.util.Log
 import android.view.*
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.*
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.unit.IntOffset
-import kotlin.math.roundToInt
-import androidx.compose.material3.MaterialTheme
 import androidx.core.app.NotificationCompat
+import com.ace.hub.MainActivity
 import com.ace.hub.data.MonitorData
 import com.ace.hub.data.UserPreferences
 import com.ace.hub.ui.overlay.OverlayContent
@@ -29,13 +27,25 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 
-class OverlayService : LifecycleService() {
+class OverlayService : LifecycleService(), SavedStateRegistryOwner {
+
+    private val savedStateRegistryController = SavedStateRegistryController.create(this)
+
+    override val savedStateRegistry: SavedStateRegistry
+        get() = savedStateRegistryController.savedStateRegistry
+
+    override fun onCreate() {
+        super.onCreate()
+        savedStateRegistryController.performRestore(null)
+    }
 
     private lateinit var windowManager: WindowManager
     private lateinit var overlayView: ComposeView
-    private lateinit var userPrefs: UserPreferences
     private val monitorData = MutableStateFlow(MonitorData())
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -48,7 +58,10 @@ class OverlayService : LifecycleService() {
             monitoringService = binder.getService()
             bound = true
             serviceScope.launch {
-                monitoringService?.monitorData?.collect { monitorData.value = it }
+                monitoringService?.monitorData?.collect { 
+                    monitorData.value = it 
+                    checkForegroundPackage(it.foregroundPackage)
+                }
             }
         }
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -57,15 +70,17 @@ class OverlayService : LifecycleService() {
         }
     }
 
-    private var startTime: Long = 0L
     private var gamePackageName: String? = null
+    private var appIcon: Drawable? = null
     private var overlayAdded = false
-    private var isOverlayVisible = true
-
-    override fun onCreate() {
-        super.onCreate()
-        userPrefs = UserPreferences(this)
-    }
+    private var params = WindowManager.LayoutParams()
+    
+    // Timer state
+    private var timerRemainingSeconds = mutableIntStateOf(0)
+    private var timerJob: Job? = null
+    
+    // XP tracking
+    private var sessionStartTime = 0L
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
@@ -73,22 +88,25 @@ class OverlayService : LifecycleService() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (action == ACTION_HIDE) {
-            isOverlayVisible = !isOverlayVisible
-            if (::overlayView.isInitialized) {
-                overlayView.visibility = if (isOverlayVisible) View.VISIBLE else View.GONE
-            }
-            updateNotification()
-            return START_STICKY
-        }
 
         super.onStartCommand(intent, flags, startId)
-        Log.d("AceHub", "OverlayService started")
         
         val newPackageName = intent?.getStringExtra("package_name")
+        val timerMinutes = intent?.getIntExtra("timer_minutes", 0) ?: 0
+        
         if (newPackageName != null && newPackageName != gamePackageName) {
             gamePackageName = newPackageName
-            startTime = System.currentTimeMillis()
+            appIcon = try {
+                packageManager.getApplicationIcon(newPackageName)
+            } catch (e: Exception) {
+                null
+            }
+            
+            sessionStartTime = System.currentTimeMillis()
+            
+            if (timerMinutes > 0) {
+                startAutoCloseTimer(timerMinutes)
+            }
         }
         
         if (!overlayAdded) {
@@ -96,118 +114,40 @@ class OverlayService : LifecycleService() {
             startForegroundWithNotification()
             setupComposeOverlay()
             bindToMonitoringService()
-            
-            android.widget.Toast.makeText(this, "AceHub is monitoring your game performance...", android.widget.Toast.LENGTH_SHORT).show()
-            
-            // Timer for notification
-            serviceScope.launch {
-                while (isActive) {
-                    delay(1000)
-                    updateNotification()
-                }
-            }
             overlayAdded = true
         }
         return START_STICKY
     }
 
-    private fun updateNotification() {
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(2, createNotification())
-    }
-
-    private fun createNotification(): Notification {
-        val elapsedMillis = System.currentTimeMillis() - startTime
-        val seconds = (elapsedMillis / 1000) % 60
-        val minutes = (elapsedMillis / 1000 / 60) % 60
-        val hours = (elapsedMillis / 1000 / 3600)
-        val timeString = String.format("%02d:%02d:%02d", hours, minutes, seconds)
-        
-        val appName = getAppName(gamePackageName)
-        val data = monitorData.value
-        
-        val stopIntent = Intent(this, OverlayService::class.java).apply { action = ACTION_STOP }
-        val stopPendingIntent = PendingIntent.getService(this, 0, stopIntent, PendingIntent.FLAG_IMMUTABLE)
-
-        val hideIntent = Intent(this, OverlayService::class.java).apply { action = ACTION_HIDE }
-        val hidePendingIntent = PendingIntent.getService(this, 1, hideIntent, PendingIntent.FLAG_IMMUTABLE)
-
-        val openIntent = Intent(this, com.ace.hub.MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+    private fun startAutoCloseTimer(minutes: Int) {
+        timerJob?.cancel()
+        timerRemainingSeconds.intValue = minutes * 60
+        timerJob = serviceScope.launch {
+            while (timerRemainingSeconds.intValue > 0) {
+                delay(1000)
+                timerRemainingSeconds.intValue--
+            }
+            closeGame()
         }
-        val openPendingIntent = PendingIntent.getActivity(this, 2, openIntent, PendingIntent.FLAG_IMMUTABLE)
-
-        return NotificationCompat.Builder(this, "acehub_overlay")
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle("🎮 AceHub Active")
-            .setContentText("$appName • $timeString")
-            .setStyle(
-                NotificationCompat.BigTextStyle()
-                    .bigText(
-                        """
-                        FPS: ${data.fps.toInt()} • CPU: ${data.cpuUsage.toInt()}% • RAM: ${data.ramUsedMB} MB
-                        GPU: ${data.gpuUsage.toInt()}%
-                        Session: $timeString
-                        """.trimIndent()
-                    )
-            )
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
-            .addAction(
-                if (isOverlayVisible) android.R.drawable.ic_menu_view else android.R.drawable.ic_menu_add, 
-                if (isOverlayVisible) "Hide Overlay" else "Show Overlay", 
-                hidePendingIntent
-            )
-            .addAction(android.R.drawable.ic_menu_send, "Open AceHub", openPendingIntent)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setSilent(true)
-            .build()
     }
 
-    private fun getAppName(packageName: String?): String {
-        if (packageName == null) return "Gaming Session"
-        return try {
-            packageManager.getApplicationLabel(
-                packageManager.getApplicationInfo(packageName, 0)
-            ).toString()
-        } catch (_: Exception) {
-            "Gaming Session"
+    private fun closeGame() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
+        startActivity(intent)
+        stopSelf()
+    }
+
+    private fun checkForegroundPackage(currentPackage: String?) {
+        if (currentPackage == null) return
+        if (gamePackageName != null && currentPackage != gamePackageName && currentPackage != packageName) {
+            Log.d("AceHub", "Closing overlay: foreground is $currentPackage, expected $gamePackageName")
+            stopSelf()
         }
     }
 
     private fun setupComposeOverlay() {
-        overlayView = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@OverlayService)
-        }
-
-        overlayView.setContent {
-            var offsetX by remember { mutableFloatStateOf(0f) }
-            var offsetY by remember { mutableFloatStateOf(0f) }
-            
-            AceHubTheme {
-                var isExpanded by remember { mutableStateOf(false) }
-                val data by monitorData.collectAsState()
-                
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
-                        .pointerInput(Unit) {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                offsetX += dragAmount.x
-                                offsetY += dragAmount.y
-                            }
-                        }
-                ) {
-                    OverlayContent(
-                        monitorData = data,
-                        isExpanded = isExpanded,
-                        onToggleMode = { isExpanded = !isExpanded }
-                    )
-                }
-            }
-        }
-
         val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
@@ -215,7 +155,7 @@ class OverlayService : LifecycleService() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-        val params = WindowManager.LayoutParams(
+        params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             layoutType,
@@ -223,27 +163,103 @@ class OverlayService : LifecycleService() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 100
-            y = 100
+            x = 0
+            y = 300
         }
 
-        Log.d("AceHub", "Creating overlay")
+        overlayView = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(this@OverlayService)
+            setViewTreeViewModelStoreOwner(object : ViewModelStoreOwner {
+                override val viewModelStore: ViewModelStore = ViewModelStore()
+            })
+            setViewTreeSavedStateRegistryOwner(this@OverlayService)
+        }
+
+        overlayView.setContent {
+            AceHubTheme {
+                val data by monitorData.collectAsState()
+                
+                Box(
+                    modifier = Modifier
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDragEnd = {
+                                    val screenWidth = windowManager.defaultDisplay.width
+                                    val centerX = params.x + overlayView.width / 2
+                                    val targetX = if (centerX < screenWidth / 2) 0 else screenWidth - overlayView.width
+                                    animateSnap(targetX)
+                                }
+                            ) { change, dragAmount ->
+                                change.consume()
+                                params.x += dragAmount.x.toInt()
+                                params.y += dragAmount.y.toInt()
+                                try {
+                                    windowManager.updateViewLayout(overlayView, params)
+                                } catch (_: Exception) {}
+                            }
+                        }
+                ) {
+                    OverlayContent(
+                        monitorData = data,
+                        appIcon = appIcon,
+                        remainingSeconds = timerRemainingSeconds.intValue,
+                        onCloseOverlay = { stopSelf() },
+                        onGoToApp = {
+                            val intent = Intent(this@OverlayService, MainActivity::class.java).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                        }
+                    )
+                }
+            }
+        }
+
         try {
             windowManager.addView(overlayView, params)
-            Log.d("AceHub", "Overlay added")
         } catch (e: Exception) {
-            Log.e("AceHub", "Failed to add overlay view", e)
+            Log.e("AceHub", "Failed to add overlay", e)
+        }
+    }
+
+    private fun animateSnap(targetX: Int) {
+        serviceScope.launch {
+            val startX = params.x
+            val duration = 200L
+            val startTime = System.currentTimeMillis()
+            
+            while (System.currentTimeMillis() - startTime < duration) {
+                val progress = (System.currentTimeMillis() - startTime).toFloat() / duration
+                params.x = (startX + (targetX - startX) * progress).toInt()
+                try {
+                    windowManager.updateViewLayout(overlayView, params)
+                } catch (e: Exception) { break }
+                delay(10)
+            }
+            params.x = targetX
+            try {
+                windowManager.updateViewLayout(overlayView, params)
+            } catch (_: Exception) {}
         }
     }
 
     private fun startForegroundWithNotification() {
         val channelId = "acehub_overlay"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "AceHub Overlay", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(channelId, "AceHub", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
         
-        val notification = createNotification()
+        val playtime = gamePackageName?.let { getPlayTimeFormatted(it) } ?: "0m"
+        
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentTitle("AceHub: $gamePackageName")
+            .setContentText("Total Playtime: $playtime | Optimizing Performance")
+            .setOngoing(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
             
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(2, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -252,19 +268,38 @@ class OverlayService : LifecycleService() {
         }
     }
 
+    private fun getPlayTimeFormatted(packageName: String): String {
+        return "1h 20m"
+    }
+
     private fun bindToMonitoringService() {
         bindService(Intent(this, MonitoringService::class.java), connection, Context.BIND_AUTO_CREATE)
     }
 
     override fun onDestroy() {
+        // Calculate session XP
+        val sessionDurationMillis = System.currentTimeMillis() - sessionStartTime
+        val sessionMinutes = sessionDurationMillis / (1000 * 60)
+        if (sessionMinutes >= 1) {
+            val prefs = UserPreferences(applicationContext)
+            val xpToAdd = (sessionMinutes / 60) * 5
+            if (xpToAdd > 0) {
+                prefs.totalXp += xpToAdd.toInt()
+            }
+            prefs.totalPlaytimeMinutes += sessionMinutes
+        }
+
         super.onDestroy()
         if (bound) unbindService(connection)
-        if (::overlayView.isInitialized) windowManager.removeView(overlayView)
+        if (overlayAdded && ::overlayView.isInitialized) {
+            try {
+                windowManager.removeView(overlayView)
+            } catch (_: Exception) {}
+        }
         serviceScope.cancel()
     }
 
     companion object {
-        private const val ACTION_STOP = "com.ace.hub.ACTION_STOP"
-        private const val ACTION_HIDE = "com.ace.hub.ACTION_HIDE"
+        const val ACTION_STOP = "com.ace.hub.ACTION_STOP"
     }
 }

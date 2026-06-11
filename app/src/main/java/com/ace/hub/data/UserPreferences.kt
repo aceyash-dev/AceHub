@@ -37,4 +37,41 @@ class UserPreferences(context: Context) {
     var profileImageUri: String?
         get() = prefs.getString("profile_image_uri", null)
         set(value) = prefs.edit().putString("profile_image_uri", value).apply()
+
+    var showBatteryStats: Boolean
+        get() = prefs.getBoolean("show_battery_stats", true)
+        set(value) = prefs.edit().putBoolean("show_battery_stats", value).apply()
+
+    var vibrationOnLaunch: Boolean
+        get() = prefs.getBoolean("vibration_on_launch", false)
+        set(value) = prefs.edit().putBoolean("vibration_on_launch", value).apply()
+
+    var autoDnd: Boolean
+        get() = prefs.getBoolean("auto_dnd", false)
+        set(value) = prefs.edit().putBoolean("auto_dnd", value).apply()
+
+    var brightnessLock: Boolean
+        get() = prefs.getBoolean("brightness_lock", false)
+        set(value) = prefs.edit().putBoolean("brightness_lock", value).apply()
+
+    // Level & XP System
+    var totalXp: Int
+        get() = prefs.getInt("total_xp", 1)
+        set(value) = prefs.edit().putInt("total_xp", value).apply()
+
+    var lastLoginDate: Long
+        get() = prefs.getLong("last_login_date", 0L)
+        set(value) = prefs.edit().putLong("last_login_date", value).apply()
+
+    var showGlowingRing: Boolean
+        get() = prefs.getBoolean("show_glowing_ring", true)
+        set(value) = prefs.edit().putBoolean("show_glowing_ring", value).apply()
+
+    var showNameplate: Boolean
+        get() = prefs.getBoolean("show_nameplate", true)
+        set(value) = prefs.edit().putBoolean("show_nameplate", value).apply()
+        
+    var totalPlaytimeMinutes: Long
+        get() = prefs.getLong("total_playtime_minutes", 0L)
+        set(value) = prefs.edit().putLong("total_playtime_minutes", value).apply()
 }

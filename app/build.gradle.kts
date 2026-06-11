@@ -2,17 +2,18 @@ plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
   alias(libs.plugins.kotlin.serialization)
+  alias(libs.plugins.google.services)
 }
 
 android {
     namespace = "com.ace.hub"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig {
         applicationId = "com.ace.hub"
         minSdk = 26
-        targetSdk = 36
-        versionCode = 5
-        versionName = "1.2026.6-Beta.2"
+        targetSdk = 37
+        versionCode = 8
+        versionName = "1.26 Beta-2"
     }
 
     splits {
@@ -61,7 +62,7 @@ dependencies {
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.activity.compose)
-  implementation("androidx.core:core-splashscreen:1.0.1")
+  implementation("androidx.core:core-splashscreen:1.2.0")
   implementation("com.google.android.material:material:1.14.0")
   implementation("com.google.accompanist:accompanist-drawablepainter:0.37.3")
 
@@ -101,11 +102,11 @@ dependencies {
   implementation(libs.androidx.navigation3.runtime)
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
 
-  // Vico (Charting)
-  implementation("com.patrykandpatrick.vico:compose:2.0.0-alpha.22")
-  implementation("com.patrykandpatrick.vico:compose-m3:2.0.0-alpha.22")
-
   // Networking & Serialization
   implementation(libs.okhttp)
   implementation(libs.kotlinx.serialization.json)
+
+  // Firebase
+  implementation(platform(libs.firebase.bom))
+  implementation(libs.firebase.analytics)
 }

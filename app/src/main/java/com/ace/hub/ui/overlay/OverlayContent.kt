@@ -1,146 +1,195 @@
 package com.ace.hub.ui.overlay
 
+import android.graphics.drawable.Drawable
 import androidx.compose.animation.*
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Launch
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ace.hub.data.MonitorData
+import com.google.accompanist.drawablepainter.rememberDrawablePainter
 
 @Composable
 fun OverlayContent(
     monitorData: MonitorData,
-    onToggleMode: () -> Unit,
-    isExpanded: Boolean,
-    isAutoBoostEnabled: Boolean,
-    onAutoBoostToggle: (Boolean) -> Unit
+    appIcon: Drawable? = null,
+    remainingSeconds: Int = 0,
+    onCloseOverlay: () -> Unit = {},
+    onGoToApp: () -> Unit = {}
 ) {
-    val fpsColor = remember(monitorData.fps) {
-        when {
-            monitorData.fps >= 90 -> Color(0xFF4CAF50)
-            monitorData.fps >= 60 -> Color(0xFF8BC34A)
-            monitorData.fps >= 30 -> Color(0xFFFFC107)
-            else -> Color(0xFFF44336)
-        }
-    }
+    val purplePrimary = Color(0xFFD0BCFF)
+    val purpleContainer = Color(0xFF1D1B20)
+    
+    var expanded by remember { mutableStateOf(false) }
 
-    Surface(
+    Card(
         modifier = Modifier
-            .animateContentSize(animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow))
-            .padding(8.dp),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceColorAtElevation(12.dp).copy(alpha = 0.92f),
-        tonalElevation = 8.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+            .wrapContentSize()
+            .clickable { expanded = !expanded },
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = purpleContainer.copy(alpha = 0.95f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, purplePrimary.copy(alpha = 0.4f))
     ) {
         Column(
-            modifier = Modifier
-                .padding(14.dp)
-                .clickable { onToggleMode() }
+            modifier = Modifier.padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Minimized Header
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = CircleShape,
-                    color = fpsColor.copy(alpha = 0.15f),
-                    modifier = Modifier.size(36.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, fpsColor.copy(alpha = 0.2f))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // App Icon or Default
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(purplePrimary.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.SportsEsports,
+                    if (appIcon != null) {
+                        androidx.compose.foundation.Image(
+                            painter = rememberDrawablePainter(appIcon),
                             contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = fpsColor
+                            modifier = Modifier.size(28.dp)
+                        )
+                    } else {
+                        Icon(
+                            Icons.Filled.SportsEsports,
+                            contentDescription = null,
+                            tint = purplePrimary,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+
+                // FPS Display
+                Column(horizontalAlignment = Alignment.Start) {
+                    Row(verticalAlignment = Alignment.Bottom) {
                         Text(
                             text = "${monitorData.fps.toInt()}",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Black,
-                            color = fpsColor,
-                            letterSpacing = (-0.5).sp
+                            color = Color.White,
+                            fontFamily = FontFamily.Monospace
                         )
                         Text(
-                            text = " FPS",
+                            text = "FPS",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = fpsColor.copy(alpha = 0.7f)
+                            color = purplePrimary,
+                            modifier = Modifier.padding(start = 2.dp, bottom = 4.dp),
+                            fontFamily = FontFamily.Monospace
                         )
                     }
-                    
-                    // Mini Sparkline Graph
-                    FPSGraph(
-                        points = monitorData.fpsHistoryList,
-                        color = fpsColor,
-                        modifier = Modifier.width(60.dp).height(12.dp).padding(top = 2.dp)
+                }
+                
+                if (remainingSeconds > 0) {
+                    val minutes = remainingSeconds / 60
+                    val seconds = remainingSeconds % 60
+                    Text(
+                        text = String.format("%02d:%02d", minutes, seconds),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.Red.copy(alpha = 0.8f),
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
-            
-            // Sliding Expanded content
+
             AnimatedVisibility(
-                visible = isExpanded,
-                enter = expandVertically(animationSpec = spring()) + fadeIn(),
-                exit = shrinkVertically(animationSpec = spring()) + fadeOut()
+                visible = expanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
             ) {
-                Column {
+                Column(
+                    modifier = Modifier
+                        .padding(top = 12.dp)
+                        .width(200.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    HorizontalDivider(color = purplePrimary.copy(alpha = 0.2f), thickness = 1.dp)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    // Native XY Graph (Mini)
+                    MiniFpsGraph(monitorData.fpsHistoryList, purplePrimary)
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    // Stats Row
+                    val ramUsagePercent = if (monitorData.ramTotalMB > 0) 
+                        (monitorData.ramUsedMB * 100 / monitorData.ramTotalMB).toInt() 
+                    else 0
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        StatItem("Temperature", "${monitorData.batteryTempCelsius.toInt()}°C", purplePrimary)
+                        StatItem("RAM", "$ramUsagePercent%", purplePrimary)
+                        StatItem("CPU", "${monitorData.cpuUsage.toInt()}%", purplePrimary)
+                    }
+                    
                     Spacer(modifier = Modifier.height(16.dp))
                     
-                    // Metric Chips Row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        MetricChip("CPU", "${monitorData.cpuUsage.toInt()}%", Modifier.weight(1f))
-                        MetricChip("GPU", "${monitorData.gpuUsage.toInt()}%", Modifier.weight(1f))
-                        MetricChip("RAM", "${monitorData.ramUsedMB}MB", Modifier.weight(1f))
+                        OutlinedButton(
+                            onClick = onGoToApp,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(0.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = purplePrimary),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, purplePrimary.copy(alpha = 0.5f))
+                        ) {
+                            Icon(Icons.Default.Launch, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Go Back to Hub", fontSize = 10.sp)
+                        }
+                        
+                        Button(
+                            onClick = onCloseOverlay,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(0.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.2f), contentColor = Color.Red)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Close", fontSize = 10.sp)
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("Auto Boost", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                            Text("System priority mode", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(
-                            checked = isAutoBoostEnabled,
-                            onCheckedChange = onAutoBoostToggle,
-                            modifier = Modifier.scale(0.8f),
-                            thumbContent = if (isAutoBoostEnabled) {
-                                { Icon(Icons.Default.Check, null, modifier = Modifier.size(SwitchDefaults.IconSize)) }
-                            } else {
-                                { Icon(Icons.Default.Close, null, modifier = Modifier.size(SwitchDefaults.IconSize)) }
-                            }
-                        )
-                    }
+                    Text(
+                        "Achievements(Beta)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = purplePrimary.copy(alpha = 0.6f),
+                        fontSize = 8.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
                 }
             }
         }
@@ -148,52 +197,47 @@ fun OverlayContent(
 }
 
 @Composable
-fun MetricChip(label: String, value: String, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(12.dp),
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-    ) {
-        Column(
-            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-            AnimatedContent(
-                targetState = value,
-                transitionSpec = {
-                    fadeIn() togetherWith fadeOut()
-                },
-                label = "metric_val"
-            ) { targetValue ->
-                Text(targetValue, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.ExtraBold)
+fun MiniFpsGraph(history: List<Float>, color: Color) {
+    val maxFps = 120f
+    Box(modifier = Modifier.fillMaxWidth().height(60.dp)) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val width = size.width
+            val height = size.height
+            val spacing = width / (if (history.size > 1) history.size - 1 else 1)
+
+            // Draw 60fps line
+            val y60 = height - (60f / maxFps) * height
+            drawLine(color.copy(alpha = 0.2f), Offset(0f, y60), Offset(width, y60), 1.dp.toPx())
+
+            if (history.isNotEmpty()) {
+                val path = Path()
+                history.takeLast(30).forEachIndexed { i, fps ->
+                    val x = i * (width / 29f)
+                    val y = height - (fps / maxFps) * height
+                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+
+                drawPath(path = path, color = color, style = Stroke(width = 1.5.dp.toPx()))
+                
+                val fillPath = Path().apply {
+                    addPath(path)
+                    lineTo(width, height)
+                    lineTo(0f, height)
+                    close()
+                }
+                drawPath(
+                    path = fillPath,
+                    brush = Brush.verticalGradient(listOf(color.copy(alpha = 0.2f), Color.Transparent))
+                )
             }
         }
     }
 }
 
 @Composable
-fun FPSGraph(points: List<Float>, color: Color, modifier: Modifier = Modifier) {
-    androidx.compose.foundation.Canvas(modifier = modifier) {
-        if (points.size < 2) return@Canvas
-        val width = size.width
-        val height = size.height
-        val maxFps = 120f
-        val minFps = 0f
-        val range = maxFps - minFps
-        
-        val path = androidx.compose.ui.graphics.Path()
-        points.forEachIndexed { index, fps ->
-            val x = index * (width / (points.size - 1))
-            val y = height - ((fps.coerceIn(minFps, maxFps) - minFps) / range * height)
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        
-        drawPath(
-            path = path,
-            color = color,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
-        )
+fun StatItem(label: String, value: String, color: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = color.copy(alpha = 0.7f), fontSize = 8.sp, fontFamily = FontFamily.Monospace)
+        Text(value, style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
     }
 }

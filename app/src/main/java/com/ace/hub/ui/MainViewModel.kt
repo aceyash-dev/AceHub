@@ -16,6 +16,7 @@ import com.ace.hub.service.MonitoringService
 import com.ace.hub.service.OverlayService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,12 +33,21 @@ data class GitHubRelease(
     val html_url: String
 )
 
+data class BootTask(
+    val name: String,
+    val completed: Boolean = false,
+    val failed: Boolean = false,
+    val message: String = ""
+)
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val context = application.applicationContext
     private val systemMonitor = SystemMonitor(context)
     private val gameRepository = GameRepository(context)
     private val userPrefs = UserPreferences(context)
+
+    private val json = Json { ignoreUnknownKeys = true }
 
     private val _username = MutableStateFlow(userPrefs.username)
     val username: StateFlow<String> = _username.asStateFlow()
@@ -66,6 +76,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _profileImageUri = MutableStateFlow(userPrefs.profileImageUri)
     val profileImageUri: StateFlow<String?> = _profileImageUri.asStateFlow()
 
+    private val _showBatteryStats = MutableStateFlow(userPrefs.showBatteryStats)
+    val showBatteryStats: StateFlow<Boolean> = _showBatteryStats.asStateFlow()
+
+    private val _vibrationOnLaunch = MutableStateFlow(userPrefs.vibrationOnLaunch)
+    val vibrationOnLaunch: StateFlow<Boolean> = _vibrationOnLaunch.asStateFlow()
+
+    private val _autoDnd = MutableStateFlow(userPrefs.autoDnd)
+    val autoDnd: StateFlow<Boolean> = _autoDnd.asStateFlow()
+
+    private val _brightnessLock = MutableStateFlow(userPrefs.brightnessLock)
+    val brightnessLock: StateFlow<Boolean> = _brightnessLock.asStateFlow()
+
+    private val _bootTasks = MutableStateFlow<List<BootTask>>(emptyList())
+    val bootTasks: StateFlow<List<BootTask>> = _bootTasks.asStateFlow()
+
+    private val _bootFinished = MutableStateFlow(false)
+    val bootFinished: StateFlow<Boolean> = _bootFinished.asStateFlow()
+
+    private val _totalXp = MutableStateFlow(userPrefs.totalXp)
+    val totalXp: StateFlow<Int> = _totalXp.asStateFlow()
+
+    private val _showGlowingRing = MutableStateFlow(userPrefs.showGlowingRing)
+    val showGlowingRing: StateFlow<Boolean> = _showGlowingRing.asStateFlow()
+
+    private val _showNameplate = MutableStateFlow(userPrefs.showNameplate)
+    val showNameplate: StateFlow<Boolean> = _showNameplate.asStateFlow()
+
+    fun addXp(amount: Int) {
+        _totalXp.value += amount
+        userPrefs.totalXp = _totalXp.value
+    }
+
+    fun updateGlowingRing(show: Boolean) {
+        _showGlowingRing.value = show
+        userPrefs.showGlowingRing = show
+    }
+
+    fun updateNameplate(show: Boolean) {
+        _showNameplate.value = show
+        userPrefs.showNameplate = show
+    }
+
     fun updateUsername(name: String) {
         _username.value = name
         userPrefs.username = name
@@ -89,6 +141,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateAutoBoost(enabled: Boolean) {
         _isAutoBoostEnabled.value = enabled
         userPrefs.isAutoBoostEnabled = enabled
+    }
+
+    fun updateShowBatteryStats(enabled: Boolean) {
+        _showBatteryStats.value = enabled
+        userPrefs.showBatteryStats = enabled
+    }
+
+    fun updateVibrationOnLaunch(enabled: Boolean) {
+        _vibrationOnLaunch.value = enabled
+        userPrefs.vibrationOnLaunch = enabled
+    }
+
+    fun updateAutoDnd(enabled: Boolean) {
+        _autoDnd.value = enabled
+        userPrefs.autoDnd = enabled
+    }
+
+    fun updateBrightnessLock(enabled: Boolean) {
+        _brightnessLock.value = enabled
+        userPrefs.brightnessLock = enabled
+    }
+
+    private fun initBootTasks() {
+        _bootTasks.value = listOf(
+            BootTask("Loading user preferences"),
+            BootTask("Starting monitoring service"),
+            BootTask("Loading device information"),
+            BootTask("Scanning installed games"),
+            BootTask("Scanning installed apps"),
+            BootTask("Checking permissions"),
+            BootTask("Loading usage statistics"),
+            BootTask("Checking updates")
+        )
+    }
+
+    private fun completeTask(
+        name: String,
+        success: Boolean,
+        message: String = ""
+    ) {
+        _bootTasks.value = _bootTasks.value.map {
+            if (it.name == name) {
+                it.copy(
+                    completed = success,
+                    failed = !success,
+                    message = message
+                )
+            } else {
+                it
+            }
+        }
     }
 
     fun togglePinnedGame(packageName: String) {
@@ -116,6 +219,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         userPrefs.profileImageUri = uri
     }
 
+    data class SemVer(
+        val parts: List<Int>,
+        val preRelease: String? = null
+    ) : Comparable<SemVer> {
+        override fun compareTo(other: SemVer): Int {
+            val maxParts = maxOf(this.parts.size, other.parts.size)
+            for (i in 0 until maxParts) {
+                val thisPart = this.parts.getOrElse(i) { 0 }
+                val otherPart = other.parts.getOrElse(i) { 0 }
+                if (thisPart != otherPart) {
+                    return thisPart.compareTo(otherPart)
+                }
+            }
+
+            if (this.preRelease == null && other.preRelease != null) return 1
+            if (this.preRelease != null && other.preRelease == null) return -1
+            if (this.preRelease == null && other.preRelease == null) return 0
+
+            return comparePreRelease(this.preRelease!!, other.preRelease!!)
+        }
+
+        private fun comparePreRelease(pre1: String, pre2: String): Int {
+            val parts1 = pre1.split(".")
+            val parts2 = pre2.split(".")
+            val size = maxOf(parts1.size, parts2.size)
+            for (i in 0 until size) {
+                val part1 = parts1.getOrNull(i)
+                val part2 = parts2.getOrNull(i)
+
+                if (part1 == null && part2 != null) return -1
+                if (part1 != null && part2 == null) return 1
+                if (part1 != null && part2 != null) {
+                    val num1 = part1.toIntOrNull()
+                    val num2 = part2.toIntOrNull()
+
+                    if (num1 != null && num2 != null) {
+                        val comp = num1.compareTo(num2)
+                        if (comp != 0) return comp
+                    } else if (num1 != null && num2 == null) {
+                        return -1
+                    } else if (num1 == null && num2 != null) {
+                        return 1
+                    } else {
+                        val comp = part1.compareTo(part2)
+                        if (comp != 0) return comp
+                    }
+                }
+            }
+            return 0
+        }
+
+        companion object {
+            fun parse(version: String): SemVer {
+                val clean = version.trim().removePrefix("v").removePrefix("V")
+                val withoutBuild = clean.split("+").first()
+                val parts = withoutBuild.split("-")
+                val core = parts.first()
+                val preRelease = if (parts.size > 1) parts.subList(1, parts.size).joinToString("-") else null
+
+                val coreParts = core.split(".").mapNotNull { it.toIntOrNull() }
+                return SemVer(coreParts, preRelease)
+            }
+        }
+    }
+
+    private fun isNewerVersion(current: String, latest: String): Boolean {
+        return try {
+            val currentSemVer = SemVer.parse(current)
+            val latestSemVer = SemVer.parse(latest)
+            latestSemVer > currentSemVer
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     fun checkForUpdates() {
         viewModelScope.launch {
             try {
@@ -127,16 +305,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     
                     client.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) return@withContext null
-                        val body = response.body?.string() ?: return@withContext null
-                        Json { ignoreUnknownKeys = true }.decodeFromString<GitHubRelease>(body)
+                        val body = response.body.string()
+                        json.decodeFromString<GitHubRelease>(body)
                     }
                 }
 
                 if (latestRelease != null) {
-                    val currentVersion = context.packageManager.getPackageInfo(context.packageName, 0).versionName
-                    // Simple version comparison: if tag name is different from current version name
-                    // In a more robust app, you might parse semantic versioning (1.0.0 > 0.9.0)
-                    if (latestRelease.tag_name != currentVersion && !latestRelease.tag_name.contains(currentVersion)) {
+                    val currentVersion = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
+                    if (isNewerVersion(currentVersion, latestRelease.tag_name)) {
                         _newUpdateAvailable.value = latestRelease.html_url
                     }
                 }
@@ -196,30 +372,150 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
-        // Start and bind to monitoring service
+        viewModelScope.launch {
+            initBootTasks()
+
+            // 1. Loading user preferences
+            try {
+                // Daily Login XP
+                val today = java.util.Calendar.getInstance().apply {
+                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                }.timeInMillis
+                
+                if (userPrefs.lastLoginDate < today) {
+                    addXp(10)
+                    userPrefs.lastLoginDate = today
+                }
+
+                completeTask("Loading user preferences", true)
+            } catch (e: Exception) {
+                completeTask("Loading user preferences", false, e.message ?: "Unknown error")
+            }
+
+            // 2. Starting monitoring service
+            try {
+                startMonitoring()
+                completeTask("Starting monitoring service", true)
+            } catch (e: Exception) {
+                completeTask("Starting monitoring service", false, e.message ?: "Service failed")
+            }
+
+            // 3. Loading device information
+            try {
+                _deviceInfo.value = withContext(Dispatchers.IO) { systemMonitor.getDeviceInfo() }
+                completeTask("Loading device information", true)
+            } catch (e: Exception) {
+                completeTask("Loading device information", false, e.message ?: "")
+            }
+
+            // 4 & 5. Scanning games and apps
+            try {
+                loadGames()
+                completeTask("Scanning installed games", true)
+                completeTask("Scanning installed apps", true)
+            } catch (e: Exception) {
+                completeTask("Scanning installed games", false, e.message ?: "")
+            }
+
+            // 6. Checking permissions
+            completeTask(
+                "Checking permissions",
+                hasUsagePermission(),
+                if (!hasUsagePermission()) "Usage access not granted" else ""
+            )
+
+            // 7. Loading usage statistics
+            try {
+                fetchInitialUsageStats()
+                completeTask("Loading usage statistics", true)
+            } catch (e: Exception) {
+                completeTask("Loading usage statistics", false, e.message ?: "")
+            }
+
+            // 8. Checking updates
+            try {
+                checkForUpdates()
+                completeTask("Checking updates", true)
+            } catch (e: Exception) {
+                completeTask("Checking updates", false, e.message ?: "")
+            }
+
+            _bootFinished.value = true
+        }
+    }
+
+    private fun startMonitoring() {
         val serviceIntent = Intent(context, MonitoringService::class.java)
         context.startForegroundService(serviceIntent)
         context.bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
-
-        // Load device info
-        viewModelScope.launch(Dispatchers.IO) {
-            _deviceInfo.value = systemMonitor.getDeviceInfo()
-        }
-
-        // Load games list
-        loadGames()
-
-        // Check for updates on startup
-        checkForUpdates()
     }
 
-    fun loadGames() {
-        viewModelScope.launch(Dispatchers.IO) {
+    suspend fun fetchInitialUsageStats() {
+        if (!hasUsagePermission()) return
+        
+        withContext(Dispatchers.IO) {
+            val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
+            val calendar = java.util.Calendar.getInstance()
+            calendar.add(java.util.Calendar.DAY_OF_YEAR, -7)
+            
+            val stats = usageStatsManager.queryUsageStats(
+                android.app.usage.UsageStatsManager.INTERVAL_BEST,
+                calendar.timeInMillis,
+                System.currentTimeMillis()
+            )
+            
+            if (stats != null) {
+                val gamePackages = _games.value.map { it.packageName }.toSet()
+                val recentGamesFromStats = stats
+                    .filter { it.packageName in gamePackages && it.totalTimeInForeground > 0 }
+                    .sortedByDescending { it.lastTimeUsed }
+                    .map { it.packageName }
+                    .take(15)
+                
+                if (recentGamesFromStats.isNotEmpty()) {
+                    val totalSessionPlaytimeMinutes = stats
+                        .filter { it.packageName in gamePackages }
+                        .sumOf { it.totalTimeInForeground } / (1000 * 60)
+                    
+                    withContext(Dispatchers.Main) {
+                        val current = _recentGamesPackageNames.value.toMutableList()
+                        recentGamesFromStats.forEach { pkg ->
+                            if (!current.contains(pkg)) {
+                                current.add(pkg)
+                            }
+                        }
+                        _recentGamesPackageNames.value = current.take(20)
+                        userPrefs.recentGames = _recentGamesPackageNames.value
+                        
+                        // Recalculate playtime XP from history if needed
+                        val savedPlaytime = userPrefs.totalPlaytimeMinutes
+                        if (totalSessionPlaytimeMinutes > savedPlaytime) {
+                            val diff = totalSessionPlaytimeMinutes - savedPlaytime
+                            val xpToAdd = (diff / 60) * 5
+                            if (xpToAdd > 0) addXp(xpToAdd.toInt())
+                            userPrefs.totalPlaytimeMinutes = totalSessionPlaytimeMinutes
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    suspend fun loadGames() {
+        withContext(Dispatchers.IO) {
             val gamesDeferred = async { gameRepository.getInstalledGames() }
             val appsDeferred = async { gameRepository.getAllApps() }
             
-            _games.value = gamesDeferred.await()
-            _allApps.value = appsDeferred.await()
+            val games = gamesDeferred.await()
+            val apps = appsDeferred.await()
+            
+            withContext(Dispatchers.Main) {
+                _games.value = games
+                _allApps.value = apps
+            }
         }
     }
 
@@ -228,6 +524,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         
         if (_isAutoBoostEnabled.value) {
             autoBoost()
+        }
+
+        // Apply tweaks
+        if (_autoDnd.value) {
+            applyDnd(context, true)
+        }
+        if (_brightnessLock.value) {
+            applyBrightnessLock(context, true)
         }
 
         if (_isOverlayEnabled.value && Settings.canDrawOverlays(context)) {
@@ -244,8 +548,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         gameRepository.launchGame(packageName)
     }
 
+    private fun applyDnd(context: Context, enabled: Boolean) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (notificationManager.isNotificationPolicyAccessGranted) {
+                notificationManager.setInterruptionFilter(
+                    if (enabled) android.app.NotificationManager.INTERRUPTION_FILTER_PRIORITY 
+                    else android.app.NotificationManager.INTERRUPTION_FILTER_ALL
+                )
+            }
+        }
+    }
+
+    private fun applyBrightnessLock(context: Context, enabled: Boolean) {
+        if (Settings.System.canWrite(context)) {
+            if (enabled) {
+                Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+            }
+        }
+    }
+
     private fun autoBoost() {
-        // Logic to clear background processes or optimize performance
         viewModelScope.launch(Dispatchers.Default) {
             val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
             activityManager.runningAppProcesses?.forEach { process ->
@@ -270,6 +593,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getWeeklyPlaytime(): List<Float> {
         return gameRepository.getWeeklyPlaytime()
+    }
+
+    fun getWeeklyPlaytimeForGame(packageName: String): List<Float> {
+        return gameRepository.getWeeklyPlaytimeForGame(packageName)
     }
 
     override fun onCleared() {

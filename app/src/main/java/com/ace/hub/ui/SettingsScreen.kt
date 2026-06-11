@@ -1,31 +1,22 @@
 package com.ace.hub.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    username: String,
-    onUsernameChanged: (String) -> Unit,
     useSystemTheme: Boolean,
     onUseSystemThemeChanged: (Boolean) -> Unit,
     isUsageAnalyticsEnabled: Boolean,
@@ -34,11 +25,16 @@ fun SettingsScreen(
     isOverlayEnabled: Boolean,
     onOverlayEnabledChanged: (Boolean) -> Unit,
     isAutoBoostEnabled: Boolean,
-    onAutoBoostEnabledChanged: (Boolean) -> Unit
+    onAutoBoostEnabledChanged: (Boolean) -> Unit,
+    showBatteryStats: Boolean,
+    onShowBatteryStatsChanged: (Boolean) -> Unit,
+    vibrationOnLaunch: Boolean,
+    onVibrationOnLaunchChanged: (Boolean) -> Unit,
+    autoDnd: Boolean,
+    onAutoDndChanged: (Boolean) -> Unit,
+    brightnessLock: Boolean,
+    onBrightnessLockChanged: (Boolean) -> Unit
 ) {
-    var showUsernameDialog by remember { mutableStateOf(false) }
-    var tempUsername by remember { mutableStateOf(username) }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -51,38 +47,6 @@ fun SettingsScreen(
             fontWeight = FontWeight.Bold
         )
         
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "Profile",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        SettingsCard(onClick = { showUsernameDialog = true }) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.Person, null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.width(16.dp))
-                Column {
-                    Text(
-                        text = "Username",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = if (username.isBlank()) "User" else username,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-
         Spacer(modifier = Modifier.height(24.dp))
         
         Text(
@@ -138,22 +102,20 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        var mockBatteryStats by remember { mutableStateOf(true) }
         SettingsToggle(
             title = "Show Battery Stats",
             description = "Monitor battery temperature and level",
-            checked = mockBatteryStats,
-            onCheckedChange = { mockBatteryStats = it }
+            checked = showBatteryStats,
+            onCheckedChange = onShowBatteryStatsChanged
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        var mockVibration by remember { mutableStateOf(false) }
         SettingsToggle(
             title = "Vibration on Launch",
             description = "Haptic feedback when starting a game",
-            checked = mockVibration,
-            onCheckedChange = { mockVibration = it }
+            checked = vibrationOnLaunch,
+            onCheckedChange = onVibrationOnLaunchChanged
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -166,63 +128,21 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        var mockDND by remember { mutableStateOf(false) }
         SettingsToggle(
             title = "Auto DND",
             description = "Silence notifications while gaming",
-            checked = mockDND,
-            onCheckedChange = { mockDND = it }
+            checked = autoDnd,
+            onCheckedChange = onAutoDndChanged
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        var mockBrightness by remember { mutableStateOf(false) }
         SettingsToggle(
             title = "Brightness Lock",
             description = "Prevent auto-brightness changes in game",
-            checked = mockBrightness,
-            onCheckedChange = { mockBrightness = it }
+            checked = brightnessLock,
+            onCheckedChange = onBrightnessLockChanged
         )
-        
-        if (showUsernameDialog) {
-            AlertDialog(
-                onDismissRequest = { showUsernameDialog = false },
-                confirmButton = {
-                    TextButton(onClick = {
-                        onUsernameChanged(tempUsername)
-                        showUsernameDialog = false
-                    }) {
-                        Text("Save")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showUsernameDialog = false }) {
-                        Text("Cancel")
-                    }
-                },
-                title = { Text("Edit Username") },
-                text = {
-                    Column {
-                        Text(
-                            "Enter a new display name for your profile.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 16.dp)
-                        )
-                        OutlinedTextField(
-                            value = tempUsername,
-                            onValueChange = { tempUsername = it },
-                            label = { Text("Username") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp)
-                        )
-                    }
-                },
-                shape = RoundedCornerShape(28.dp),
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-            )
-        }
 
         Spacer(modifier = Modifier.height(100.dp))
     }

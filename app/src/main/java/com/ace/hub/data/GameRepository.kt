@@ -183,4 +183,35 @@ class GameRepository(private val context: Context) {
         }
         return weeklyStats
     }
+
+    fun getWeeklyPlaytimeForGame(packageName: String): List<Float> {
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val weeklyStats = mutableListOf<Float>()
+
+        for (i in 6 downTo 0) {
+            val startCalendar = Calendar.getInstance()
+            startCalendar.add(Calendar.DAY_OF_YEAR, -i)
+            startCalendar.set(Calendar.HOUR_OF_DAY, 0)
+            startCalendar.set(Calendar.MINUTE, 0)
+            startCalendar.set(Calendar.SECOND, 0)
+            startCalendar.set(Calendar.MILLISECOND, 0)
+
+            val endCalendar = Calendar.getInstance()
+            endCalendar.add(Calendar.DAY_OF_YEAR, -i)
+            endCalendar.set(Calendar.HOUR_OF_DAY, 23)
+            endCalendar.set(Calendar.MINUTE, 59)
+            endCalendar.set(Calendar.SECOND, 59)
+            endCalendar.set(Calendar.MILLISECOND, 999)
+
+            val stats = usageStatsManager.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY,
+                startCalendar.timeInMillis,
+                endCalendar.timeInMillis
+            )
+
+            val dailyTotal = stats?.find { it.packageName == packageName }?.totalTimeInForeground ?: 0L
+            weeklyStats.add(dailyTotal / (1000f * 60f)) // Convert to minutes
+        }
+        return weeklyStats
+    }
 }
