@@ -33,7 +33,9 @@ fun SettingsScreen(
     autoDnd: Boolean,
     onAutoDndChanged: (Boolean) -> Unit,
     brightnessLock: Boolean,
-    onBrightnessLockChanged: (Boolean) -> Unit
+    onBrightnessLockChanged: (Boolean) -> Unit,
+    isDashboardEnabled: Boolean,
+    onDashboardEnabledChanged: (Boolean) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -73,6 +75,15 @@ fun SettingsScreen(
         )
         
         Spacer(modifier = Modifier.height(16.dp))
+
+        SettingsToggle(
+            title = "Ace Dashboard",
+            description = "Show performance tweaks (CPU, RAM, Thermal, Network)",
+            checked = isDashboardEnabled,
+            onCheckedChange = onDashboardEnabledChanged
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         SettingsToggle(
             title = "Usage Analytics",

@@ -258,6 +258,7 @@ fun Navigation(
                                         val vibrationOnLaunch by viewModel.vibrationOnLaunch.collectAsState()
                                         val autoDnd by viewModel.autoDnd.collectAsState()
                                         val brightnessLock by viewModel.brightnessLock.collectAsState()
+                                        val isDashboardEnabled by viewModel.isDashboardEnabled.collectAsState()
 
                                         SettingsScreen(
                                             useSystemTheme = useSystemTheme,
@@ -276,7 +277,9 @@ fun Navigation(
                                             autoDnd = autoDnd,
                                             onAutoDndChanged = { viewModel.updateAutoDnd(it) },
                                             brightnessLock = brightnessLock,
-                                            onBrightnessLockChanged = { viewModel.updateBrightnessLock(it) }
+                                            onBrightnessLockChanged = { viewModel.updateBrightnessLock(it) },
+                                            isDashboardEnabled = isDashboardEnabled,
+                                            onDashboardEnabledChanged = { viewModel.updateDashboardEnabled(it) }
                                         )
                                     }
                                 }

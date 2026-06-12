@@ -58,7 +58,7 @@ fun BootScreen(viewModel: MainViewModel) {
             Spacer(modifier = Modifier.height(48.dp))
             
             Text(
-                "Booting tha App",
+                "Booting the Hub...",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Black,
                 color = purpleColor,

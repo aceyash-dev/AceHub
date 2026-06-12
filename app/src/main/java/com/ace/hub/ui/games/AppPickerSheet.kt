@@ -51,8 +51,6 @@ fun AppPickerSheet(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text("Select Game", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-
-                }
             }
 
             OutlinedTextField(
