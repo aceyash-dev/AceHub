@@ -2,7 +2,6 @@ package com.ace.hub.ui.games
 
 import android.content.Intent
 import android.net.Uri
-import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.animation.*
@@ -29,22 +28,18 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextOverflow
 import coil.compose.rememberAsyncImagePainter
 import com.ace.hub.data.GameApp
 import com.ace.hub.ui.MainViewModel
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import java.util.Calendar
-import com.ace.hub.R
 import com.ace.hub.service.OverlayService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -55,8 +50,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
+@Suppress("SpellCheckingInspection")
 private const val YOUTUBE_API_KEY = "AIzaSyBFx8rV891WSD3BKZp9lD_FJF6LYWDtAGI"
 
+@Suppress("SpellCheckingInspection")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayScreen(
@@ -162,7 +159,7 @@ fun PlayScreen(
                     }
                 }
                 connection.disconnect()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 withContext(Dispatchers.Main) {
                     videoErrorMsg = "Unable to connect to streaming layout components."
                 }
@@ -203,7 +200,7 @@ fun PlayScreen(
                         text = "$greeting, ${username.ifBlank { "Ace" }} 👋",
                         fontSize = 28.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (hour < 21 && hour >= 6) Color.Black.copy(alpha = 0.8f) else Color.White
+                        color = if (hour in 6..20) Color.Black.copy(alpha = 0.8f) else Color.White
                     )
 
                     Spacer(Modifier.height(6.dp))
@@ -211,7 +208,7 @@ fun PlayScreen(
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = if (hour < 21 && hour >= 6) Color.Black.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.7f)
+                        color = if (hour in 6..20) Color.Black.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.7f)
                     )
 
                     Spacer(Modifier.weight(1f))
@@ -525,7 +522,7 @@ fun PlayScreen(
                                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            items(fetchedVideoIds, key = { it }) { id ->
+                                            items(fetchedVideoIds, key = { it }) { id: String ->
                                                 ExpandableVideoCard(
                                                     videoId = id,
                                                     gameName = game.appName,
@@ -586,6 +583,157 @@ fun PlayScreen(
 }
 
 @Composable
+fun ExpandableVideoCard(
+    videoId: String,
+    gameName: String,
+    isPlaying: Boolean,
+    onPlay: () -> Unit,
+    onClose: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .width(280.dp)
+            .animateContentSize()
+            .clip(RoundedCornerShape(24.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(24.dp)),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        AnimatedContent(
+            targetState = isPlaying,
+            label = "playerMode"
+        ) { playing ->
+            if (!playing) {
+                Column {
+                    Box(modifier = Modifier
+                        .fillMaxWidth()
+                        .height(160.dp)) {
+                        Image(
+                            painter = rememberAsyncImagePainter("https://img.youtube.com/vi/$videoId/maxresdefault.jpg"),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                        FilledIconButton(
+                            onClick = onPlay,
+                            modifier = Modifier.align(Alignment.Center),
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = Color.White.copy(alpha = 0.9f),
+                                contentColor = Color.Black
+                            )
+                        ) {
+                            Icon(Icons.Default.PlayArrow, null)
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp),
+                            color = Color.Black.copy(alpha = 0.7f),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                "10:04",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "$gameName Pro Highlights",
+                            modifier = Modifier.weight(1f),
+                            maxLines = 2,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Visibility,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "4.2M",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else {
+                Column {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .background(Color.Black)
+                    ) {
+                        AndroidView(
+                            factory = { ctx ->
+                                WebView(ctx).apply {
+                                    settings.javaScriptEnabled = true
+                                    settings.domStorageEnabled = true
+                                    settings.mediaPlaybackRequiresUserGesture = false
+                                    webViewClient = WebViewClient()
+
+                                    val htmlData = """
+                                        <html>
+                                        <body style="margin:0;background:black;">
+                                        <iframe width="100%" height="100%" 
+                                                src="https://www.youtube.com/embed/$videoId?autoplay=1&playsinline=1&modestbranding=1&rel=0" 
+                                                frameborder="0" allow="autoplay; encrypted-media" allowfullscreen>
+                                        </iframe>
+                                        </body>
+                                        </html>
+                                    """.trimIndent()
+
+                                    loadDataWithBaseURL("https://www.youtube.com", htmlData, "text/html", "UTF-8", null)
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = onClose,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Close Video", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun PremiumVideoShimmerPlaceholder() {
     val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
     val alpha by infiniteTransition.animateFloat(
@@ -608,63 +756,78 @@ fun PremiumVideoShimmerPlaceholder() {
     )
 }
 
+fun formatPlayTime(millis: Long): String {
+    val minutes = (millis / (1000 * 60)) % 60
+    val hours = (millis / (1000 * 60 * 60))
+    return if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
+}
+
 @Composable
 fun GameCard(
     game: GameApp,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    Card(
+    val scale by animateFloatAsState(
+        targetValue = if (isSelected) 1.08f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
+        label = "scale"
+    )
+
+    Column(
         modifier = Modifier
-            .width(100.dp)
-            .height(130.dp)
+            .width(130.dp)
+            .graphicsLayer(scaleX = scale, scaleY = scale)
             .clip(RoundedCornerShape(24.dp))
-            .clickable(onClick = onClick)
-            .border(
-                width = 2.dp,
-                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                shape = RoundedCornerShape(24.dp)
-            ),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) 
-                             else MaterialTheme.colorScheme.surfaceContainerLow
-        )
+            .then(
+                if (isSelected) {
+                    Modifier.background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primaryContainer,
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                            )
+                        )
+                    )
+                } else Modifier
+            )
+            .clickable { onClick() }
+            .padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+        Box(
+            modifier = Modifier
+                .size(88.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .then(
+                    if (isSelected) Modifier.border(2.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(22.dp))
+                    else Modifier
+                ),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    painter = rememberDrawablePainter(drawable = game.icon),
-                    contentDescription = null,
-                    modifier = Modifier.size(40.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = game.appName,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurface
+            Image(
+                painter = rememberDrawablePainter(drawable = game.icon),
+                contentDescription = null,
+                modifier = Modifier.size(56.dp)
             )
         }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = game.appName,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
     }
 }
 
 @Composable
 fun LargeActionButton(
     text: String,
-    icon: ImageVector,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     containerColor: Color,
     contentColor: Color,
     modifier: Modifier = Modifier,
@@ -675,83 +838,26 @@ fun LargeActionButton(
         onClick = onClick,
         modifier = modifier.height(64.dp),
         shape = RoundedCornerShape(20.dp),
+        enabled = enabled,
         colors = ButtonDefaults.buttonColors(
             containerColor = containerColor,
             contentColor = contentColor,
-            disabledContainerColor = containerColor.copy(alpha = 0.5f),
-            disabledContentColor = contentColor.copy(alpha = 0.5f)
+            disabledContainerColor = containerColor.copy(alpha = 0.4f),
+            disabledContentColor = contentColor.copy(alpha = 0.4f)
         ),
-        enabled = enabled,
-        contentPadding = PaddingValues(horizontal = 24.dp)
+        contentPadding = PaddingValues(horizontal = 16.dp)
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-fun ExpandableVideoCard(
-    videoId: String,
-    gameName: String,
-    isPlaying: Boolean,
-    onPlay: () -> Unit,
-    onClose: () -> Unit
-) {
-    val cardWidth by animateDpAsState(targetValue = if (isPlaying) 320.dp else 280.dp, label = "width")
-    val cardHeight by animateDpAsState(targetValue = if (isPlaying) 260.dp else 220.dp, label = "height")
-
-    Card(
-        modifier = Modifier
-            .width(cardWidth)
-            .height(cardHeight)
-            .clip(RoundedCornerShape(24.dp))
-            .clickable(enabled = !isPlaying) { onPlay() },
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
-    ) {
-        if (isPlaying) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                AndroidView(
-                    factory = { ctx ->
-                        WebView(ctx).apply {
-                            settings.javaScriptEnabled = true
-                            webViewClient = WebViewClient()
-                            webChromeClient = WebChromeClient()
-                            loadUrl("https://www.youtube.com/embed/$videoId?autoplay=1")
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-                IconButton(
-                    onClick = onClose,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
-                ) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-                }
-            }
-        } else {
-            Box(modifier = Modifier.fillMaxSize()) {
-                Image(
-                    painter = rememberAsyncImagePainter("https://img.youtube.com/vi/$videoId/0.jpg"),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.3f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.PlayCircleOutline,
-                        contentDescription = "Play",
-                        tint = Color.White,
-                        modifier = Modifier.size(48.dp)
-                    )
-                }
-            }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -762,8 +868,7 @@ fun InfoRow(label: String, value: String) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(
             text = label,
@@ -772,16 +877,9 @@ fun InfoRow(label: String, value: String) {
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface
         )
     }
-}
-
-fun formatPlayTime(millis: Long): String {
-    val totalMinutes = millis / (1000 * 60)
-    val hours = totalMinutes / 60
-    val minutes = totalMinutes % 60
-    return if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
 }

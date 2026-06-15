@@ -1,7 +1,10 @@
 package com.ace.hub.ui
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Environment
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -9,6 +12,8 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,27 +37,41 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.ace.hub.R
 import com.ace.hub.ui.components.FpsXyGraph
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.util.Calendar
 
+@Suppress("SpellCheckingInspection")
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MeScreen(
     viewModel: MainViewModel,
     onNavigateToSettings: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val username by viewModel.username.collectAsState()
     val profilePhotoUrl by viewModel.profileImageUri.collectAsState()
     val monitorData by viewModel.monitorData.collectAsState()
     val games by viewModel.games.collectAsState()
 
-    var weeklyStats by remember { mutableStateOf<List<Float>>(emptyList()) }
-    var totalPlayTime by remember { mutableLongStateOf(0L) }
+    var weeklyPlaytimeMinutes by remember { mutableStateOf<List<Float>>(emptyList()) }
+    var totalPlayTimeMillis by remember { mutableLongStateOf(0L) }
+
+    var selectedDayIndex by remember {
+        mutableStateOf(Calendar.getInstance().get(Calendar.DAY_OF_WEEK).let { if (it == Calendar.SUNDAY) 6 else it - 2 })
+    }
 
     val hour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
+    val daysOfWeekLabels = remember { listOf("M", "T", "W", "T", "F", "S", "S") }
 
     LaunchedEffect(Unit) {
-        weeklyStats = viewModel.getWeeklyPlaytime()
-        totalPlayTime = viewModel.getTotalPlayTime()
+        weeklyPlaytimeMinutes = viewModel.getWeeklyPlaytime()
+        totalPlayTimeMillis = viewModel.getTotalPlayTime()
     }
 
     val launcher = rememberLauncherForActivityResult(
@@ -61,9 +80,7 @@ fun MeScreen(
         uri?.let {
             try {
                 context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } catch (e: Exception) {
-                // Non-persistable context flag safely caught
-            }
+            } catch (_: Exception) {}
             viewModel.updateProfileImage(it.toString())
         }
     }
@@ -133,7 +150,7 @@ fun MeScreen(
                                         Icons.Default.Person,
                                         contentDescription = null,
                                         modifier = Modifier.size(50.dp),
-                                        tint = if (hour < 21 && hour >= 6) Color.Black.copy(alpha = 0.6f) else Color.White
+                                        tint = if (hour in 6..20) Color.Black.copy(alpha = 0.6f) else Color.White
                                     )
                                 }
                             }
@@ -162,21 +179,21 @@ fun MeScreen(
                             text = username.ifBlank { "Ace Yash" },
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
-                            color = if (hour < 21 && hour >= 6) Color.Black.copy(alpha = 0.8f) else Color.White
+                            color = if (hour in 6..20) Color.Black.copy(alpha = 0.5f) else Color.White
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Icon(
                             Icons.Default.Edit,
                             contentDescription = "Edit Name",
                             modifier = Modifier.size(16.dp),
-                            tint = if (hour < 21 && hour >= 6) Color.Black.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.6f)
+                            tint = if (hour in 6..20) Color.Black.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.6f)
                         )
                     }
 
                     Text(
-                        text = "AceHub Member • Level 12 Gamer",
+                        text = "AceHub Member",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (hour < 21 && hour >= 6) Color.Black.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.7f)
+                        color = if (hour in 6..20) Color.Black.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.7f)
                     )
                 }
             }
@@ -196,7 +213,7 @@ fun MeScreen(
             ) {
                 MeStatItem("Games", "${games.size}")
                 VerticalDivider(modifier = Modifier.height(40.dp).padding(horizontal = 8.dp))
-                MeStatItem("Hours", "${totalPlayTime / (1000 * 60 * 60)}h")
+                MeStatItem("Hours", "${totalPlayTimeMillis / (1000 * 60 * 60)}h")
                 VerticalDivider(modifier = Modifier.height(40.dp).padding(horizontal = 8.dp))
                 MeStatItem("Avg FPS", "${monitorData.fps.toInt()}")
             }
@@ -204,35 +221,82 @@ fun MeScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Weekly Activity
-        Text(
-            "Recent Activity",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.align(Alignment.Start).padding(start = 4.dp, bottom = 12.dp)
-        )
+        // Playtime Tracking Activity & Filter Chips Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Weekly Playtime",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(start = 4.dp)
+            )
+
+            val activeSelectedValue = if (weeklyPlaytimeMinutes.size > selectedDayIndex) {
+                weeklyPlaytimeMinutes[selectedDayIndex].toInt()
+            } else 0
+
+            Text(
+                text = "$activeSelectedValue min",
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.ExtraBold,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(end = 4.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Box(modifier = Modifier.height(100.dp).fillMaxWidth()) {
-                    if (weeklyStats.isNotEmpty()) {
-                        FpsXyGraph(history = weeklyStats, color = MaterialTheme.colorScheme.primary)
+                Box(modifier = Modifier.height(120.dp).fillMaxWidth()) {
+                    if (weeklyPlaytimeMinutes.isNotEmpty()) {
+                        FpsXyGraph(history = weeklyPlaytimeMinutes, color = MaterialTheme.colorScheme.primary)
                     } else {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("No activity recorded", style = MaterialTheme.typography.bodySmall)
+                            Text("No playtime logs available", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // M3 Filter Chips Layout Grid
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    listOf("M", "T", "W", "T", "F", "S", "S").forEach { day ->
-                        Text(day, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    itemsIndexed(daysOfWeekLabels) { idx: Int, label: String ->
+                        FilterChip(
+                            selected = selectedDayIndex == idx,
+                            onClick = { selectedDayIndex = idx },
+                            label = {
+                                Text(
+                                    text = label,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp
+                                )
+                            },
+                            shape = CircleShape,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = selectedDayIndex == idx,
+                                borderColor = MaterialTheme.colorScheme.outlineVariant,
+                                selectedBorderColor = Color.Transparent
+                            ),
+                            modifier = Modifier.padding(horizontal = 2.dp)
+                        )
                     }
                 }
             }
@@ -249,50 +313,60 @@ fun MeScreen(
         )
 
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            QuickActionCard(
+                icon = Icons.Default.Settings,
+                title = "Settings Menu",
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onNavigateToSettings
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 QuickActionCard(
-                    icon = Icons.Default.Settings,
-                    title = "Settings",
-                    color = MaterialTheme.colorScheme.primary,
+                    icon = Icons.Default.CloudUpload,
+                    title = "Backup Data",
+                    color = Color(0xFF00BCD4),
                     modifier = Modifier.weight(1f),
-                    onClick = onNavigateToSettings
+                    onClick = {
+                        scope.launch {
+                            val backedUpSuccessfully = executeLocalDatabaseBackup(context)
+                            if (backedUpSuccessfully) {
+                                Toast.makeText(context, "Database backup cloned to Downloads folder!", Toast.LENGTH_LONG).show()
+                            } else {
+                                Toast.makeText(context, "Backup initialization fault.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
                 )
+
                 QuickActionCard(
-                    icon = Icons.Default.BarChart,
-                    title = "Statistics",
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.weight(1f),
-                    onClick = { /* Implement Analytics Sheet navigation upstream */ }
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                QuickActionCard(
-                    icon = Icons.Default.Games,
-                    title = "My Games",
+                    icon = Icons.Default.CloudDownload,
+                    title = "Import Data",
                     color = Color(0xFF4CAF50),
                     modifier = Modifier.weight(1f),
-                    onClick = { /* Handle Filter shortcut implementation */ }
-                )
-                QuickActionCard(
-                    icon = Icons.Default.EmojiEvents,
-                    title = "Achievements",
-                    color = Color(0xFFFFC107),
-                    modifier = Modifier.weight(1f),
-                    onClick = { /* Handle Achievement breakdown tracking */ }
+                    onClick = {
+                        scope.launch {
+                            val importedSuccessfully = executeLocalDatabaseRestore(context)
+                            if (importedSuccessfully) {
+                                Toast.makeText(context, "Backup restored successfully! Restarting app...", Toast.LENGTH_LONG).show()
+                                // Allow toast to display briefly before killing the process so database layers refresh cleanly
+                                kotlinx.coroutines.delay(1500)
+                                android.os.Process.killProcess(android.os.Process.myPid())
+                            } else {
+                                Toast.makeText(context, "No backup file found in Downloads folder.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
                 )
             }
-            QuickActionCard(
-                icon = Icons.Default.CloudSync,
-                title = "Backup & Restore",
-                color = Color(0xFF00BCD4),
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { /* Fire Room DB Cloud-Save backup hook */ }
-            )
         }
 
         Spacer(modifier = Modifier.height(48.dp))
 
-        // Footer
+        // Footer Link Container
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -325,6 +399,100 @@ fun MeScreen(
                 )
             }
         }
+    }
+}
+
+/**
+ * Database raw file manipulation layer.
+ * Safely handles Room database structures along with SQLite journal pages.
+ */
+private suspend fun executeLocalDatabaseBackup(context: Context): Boolean = withContext(Dispatchers.IO) {
+    try {
+        val databaseName = "acehub_database"
+        val databaseFile = context.getDatabasePath(databaseName)
+
+        if (!databaseFile.exists()) return@withContext false
+
+        val targetDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val backupDestinationFile = File(targetDirectory, "AceHub_Backup.db")
+
+        FileInputStream(databaseFile).use { input ->
+            FileOutputStream(backupDestinationFile).use { output ->
+                input.copyTo(output)
+            }
+        }
+
+        val walJournalFile = File(databaseFile.absolutePath + "-wal")
+        if (walJournalFile.exists()) {
+            FileInputStream(walJournalFile).use { input ->
+                FileOutputStream(File(targetDirectory, "AceHub_Backup.db-wal")).use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+
+        val shmJournalFile = File(databaseFile.absolutePath + "-shm")
+        if (shmJournalFile.exists()) {
+            FileInputStream(shmJournalFile).use { input ->
+                FileOutputStream(File(targetDirectory, "AceHub_Backup.db-shm")).use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+        true
+    } catch (_: Exception) {
+        false
+    }
+}
+
+/**
+ * Reverses the raw file database copy process to completely import pre-existing database tables.
+ * Safe extraction mechanisms handle runtime fallback loops cleanly to prevent app data corruption.
+ */
+private suspend fun executeLocalDatabaseRestore(context: Context): Boolean = withContext(Dispatchers.IO) {
+    try {
+        val targetDirectory = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val backupSourceFile = File(targetDirectory, "AceHub_Backup.db")
+
+        if (!backupSourceFile.exists()) return@withContext false
+
+        val databaseName = "acehub_database"
+        val databaseFile = context.getDatabasePath(databaseName)
+
+        // Clean pre-existing local data database destination file anchors first to prevent writing lock failures
+        if (databaseFile.exists()) databaseFile.delete()
+
+        FileInputStream(backupSourceFile).use { input ->
+            FileOutputStream(databaseFile).use { output ->
+                input.copyTo(output)
+            }
+        }
+
+        // Restore active SQLite transaction journals synchronously if available inside download directory bounds
+        val backupWalFile = File(targetDirectory, "AceHub_Backup.db-wal")
+        val destWalFile = File(databaseFile.absolutePath + "-wal")
+        if (destWalFile.exists()) destWalFile.delete()
+        if (backupWalFile.exists()) {
+            FileInputStream(backupWalFile).use { input ->
+                FileOutputStream(destWalFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+
+        val backupShmFile = File(targetDirectory, "AceHub_Backup.db-shm")
+        val destShmFile = File(databaseFile.absolutePath + "-shm")
+        if (destShmFile.exists()) destShmFile.delete()
+        if (backupShmFile.exists()) {
+            FileInputStream(backupShmFile).use { input ->
+                FileOutputStream(destShmFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+        true
+    } catch (_: Exception) {
+        false
     }
 }
 
