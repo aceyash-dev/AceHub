@@ -1,10 +1,10 @@
 package com.ace.hub.ui.games
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import android.provider.Settings
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
@@ -28,81 +28,148 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import coil.compose.rememberAsyncImagePainter
 import com.ace.hub.data.GameApp
 import com.ace.hub.ui.MainViewModel
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import java.util.Calendar
+import com.ace.hub.R
+import com.ace.hub.service.OverlayService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 
+private const val YOUTUBE_API_KEY = "AIzaSyBFx8rV891WSD3BKZp9lD_FJF6LYWDtAGI"
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayScreen(
     viewModel: MainViewModel,
-    modifier: Modifier = Modifier,
-    username: String
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val allApps by viewModel.allApps.collectAsState()
     val pinnedGamesPackageNames by viewModel.pinnedGamesPackageNames.collectAsState()
-    val isGoogleLinked by viewModel.isGoogleLinked.collectAsState()
-    
+
     val pinnedGames = remember(allApps, pinnedGamesPackageNames) {
         allApps.filter { it.packageName in pinnedGamesPackageNames }
     }
 
     var selectedGame by remember { mutableStateOf<GameApp?>(null) }
     var showAppPicker by remember { mutableStateOf(false) }
-    var showLoginModal by remember { mutableStateOf(false) }
     var selectedGamePlayTime by remember { mutableLongStateOf(0L) }
 
-    // --- GAME BOOSTER STATES ---
-    var isPerformanceModeEnabled by remember { mutableStateOf(false) }
-    
-    var isCleaningRam by remember { mutableStateOf(false) }
-    var ramFreedMb by remember { mutableStateOf(0) }
-    val coroutineScope = rememberCoroutineScope()
+    var timerMinutesSelection by remember { mutableFloatStateOf(0f) }
 
-    var isNetworkOptimized by remember { mutableStateOf(false) }
-    var isDisplayOptimized by remember { mutableStateOf(false) }
+    // Dynamic Live Feed Network States
+    var fetchedVideoIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isVideoLoading by remember { mutableStateOf(false) }
+    var videoErrorMsg by remember { mutableStateOf<String?>(null) }
 
-    // Live Temperature Simulation (Slightly rises when Performance Mode is ON)
-    var thermalTemp by remember { mutableStateOf(36.2f) }
-    LaunchedEffect(isPerformanceModeEnabled) {
-        while (true) {
-            val baseTemp = if (isPerformanceModeEnabled) 40.8f else 36.2f
-            val fluctuation = ((-4..4).random().toFloat() / 10f)
-            thermalTemp = (baseTemp + fluctuation)
-            delay(4000)
-        }
+    val hour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
+    val username by viewModel.username.collectAsState()
+
+    val greeting = when {
+        hour < 12 -> "Good Morning"
+        hour < 17 -> "Good Afternoon"
+        hour < 21 -> "Good Evening"
+        else -> "Good Night"
     }
 
-    // Determine Manufacturer Game Mode API
-    val manufacturerApiName = remember {
-        val manufacturer = Build.MANUFACTURER.lowercase()
-        when {
-            manufacturer.contains("samsung") -> "Samsung Game Booster SDK"
-            manufacturer.contains("xiaomi") -> "Xiaomi Game Turbo API"
-            manufacturer.contains("oppo") || manufacturer.contains("realme") || manufacturer.contains("oneplus") -> "OPPO HyperBoost SDK"
-            manufacturer.contains("asus") || manufacturer.contains("rog") -> "ROG Armoury Crate Engine"
-            else -> "Android Game State API"
-        }
+    val subtitle = when {
+        hour < 12 -> "Rise and grind"
+        hour < 17 -> "Keep the momentum going"
+        hour < 21 -> "Time for another session"
+        else -> "One more match before sleep?"
     }
 
     LaunchedEffect(selectedGame) {
         selectedGamePlayTime = selectedGame?.let { viewModel.getPlayTime(it.packageName) } ?: 0L
     }
 
-    val currentHour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-    val greeting = when (currentHour) {
-        in 4..10 -> "Good Morning"
-        in 11..15 -> "Good Afternoon"
-        in 16..19 -> "Good Evening"
-        else -> "Good Night"
+    // Live Streaming API Controller Scope
+    LaunchedEffect(selectedGame) {
+        val gameName = selectedGame?.appName
+        if (gameName.isNullOrBlank()) {
+            fetchedVideoIds = emptyList()
+            videoErrorMsg = null
+            return@LaunchedEffect
+        }
+
+        isVideoLoading = true
+        videoErrorMsg = null
+
+        fetchedVideoIds = withContext(Dispatchers.IO) {
+            val fetchedList = mutableListOf<String>()
+            try {
+                val encodedQuery = URLEncoder.encode("$gameName high tier gameplay metrics walkthrough", "UTF-8")
+                val targetUrl = "https://www.googleapis.com/youtube/v3/search" +
+                        "?part=snippet" +
+                        "&maxResults=5" +
+                        "&order=relevance" +
+                        "&q=$encodedQuery" +
+                        "&type=video" +
+                        "&videoCategoryId=20" +
+                        "&key=$YOUTUBE_API_KEY"
+
+                val url = URL(targetUrl)
+                val connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
+
+                if (connection.responseCode == 200) {
+                    val reader = BufferedReader(InputStreamReader(connection.inputStream))
+                    val response = StringBuilder()
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        response.append(line)
+                    }
+                    reader.close()
+
+                    val jsonResponse = JSONObject(response.toString())
+                    val itemsArray = jsonResponse.optJSONArray("items")
+                    if (itemsArray != null) {
+                        for (i in 0 until itemsArray.length()) {
+                            val itemObj = itemsArray.getJSONObject(i)
+                            val idObj = itemObj.optJSONObject("id")
+                            val videoId = idObj?.optString("videoId")
+                            if (!videoId.isNullOrBlank()) {
+                                fetchedList.add(videoId)
+                            }
+                        }
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        videoErrorMsg = "API Connection Fault (${connection.responseCode})"
+                    }
+                }
+                connection.disconnect()
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    videoErrorMsg = "Unable to connect to streaming layout components."
+                }
+            }
+            fetchedList
+        }
+        isVideoLoading = false
     }
 
     Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
@@ -112,47 +179,58 @@ fun PlayScreen(
                 .padding(horizontal = 20.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Header with Greeting and Buttons (Without level/XP)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = greeting,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "$username!",
-                        style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = { showLoginModal = true },
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                    ) {
-                        Icon(
-                            Icons.Default.CalendarToday, // Login represented by calendar
-                            contentDescription = "Login",
-                            tint = MaterialTheme.colorScheme.primary
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Hero Banner Header Layout
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            colors = when {
+                                hour < 12 -> listOf(Color(0xFFFFB74D), Color(0xFFFFE082))
+                                hour < 17 -> listOf(Color(0xFF4FC3F7), Color(0xFF81D4FA))
+                                hour < 21 -> listOf(Color(0xFFFF7043), Color(0xFFAB47BC))
+                                else -> listOf(Color(0xFF0D1117), Color(0xFF1A237E))
+                            }
                         )
-                    }
+                    )
+            ) {
+                Column(modifier = Modifier.padding(24.dp)) {
+                    Text(
+                        text = "$greeting, ${username.ifBlank { "Ace" }} 👋",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (hour < 21 && hour >= 6) Color.Black.copy(alpha = 0.8f) else Color.White
+                    )
+
+                    Spacer(Modifier.height(6.dp))
+
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (hour < 21 && hour >= 6) Color.Black.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.7f)
+                    )
+
+                    Spacer(Modifier.weight(1f))
+
+                    Text(
+                        text = when {
+                            hour < 12 -> "🌅 ☁️ 🐦"
+                            hour < 17 -> "☀️ 🌤️ 🌳"
+                            hour < 21 -> "🌇 ✨ 🌆"
+                            else -> "🌙 ⭐ ☁️"
+                        },
+                        fontSize = 32.sp
+                    )
                 }
             }
-            
-            Spacer(modifier = Modifier.height(28.dp))
-            
-            // Library Section (Without extra "+" button)
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Library Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -167,6 +245,7 @@ fun PlayScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            // Infinite App Grid Picker Transition Matrix
             AnimatedContent(
                 targetState = pinnedGames.isEmpty(),
                 transitionSpec = {
@@ -181,7 +260,10 @@ fun PlayScreen(
                             .height(140.dp)
                             .clip(RoundedCornerShape(24.dp))
                             .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                            .clickable { showAppPicker = true },
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                showAppPicker = true
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -209,16 +291,83 @@ fun PlayScreen(
                             GameCard(
                                 game = game,
                                 isSelected = isSelected,
-                                onClick = { selectedGame = if (isSelected) null else game }
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    selectedGame = if (isSelected) null else game
+                                }
                             )
                         }
                     }
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Action Buttons (Launch button enlarges, removing Add Game button when a game is selected)
+            // Premium Auto-Stop Timer Module Card
+            AnimatedVisibility(
+                visible = selectedGame != null,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.HourglassTop,
+                                    contentDescription = "Session Limits",
+                                    tint = if (timerMinutesSelection > 0f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Auto-Stop Game Session",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                text = if (timerMinutesSelection.toInt() == 0) "Disabled" else "${timerMinutesSelection.toInt()} Min",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (timerMinutesSelection > 0f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Slider(
+                            value = timerMinutesSelection,
+                            onValueChange = { timerMinutesSelection = it },
+                            valueRange = 0f..120f,
+                            steps = 7,
+                            colors = SliderDefaults.colors(
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary,
+                                inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant
+                            )
+                        )
+
+                        Text(
+                            text = "Forces game closure and overlay window shutdown automatically when time expires.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // Primary Screen Actions Execution Layer
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -235,252 +384,29 @@ fun PlayScreen(
                 }
 
                 LargeActionButton(
-                    text = if (selectedGame != null) "Launch" else "Select Game",
+                    text = if (selectedGame != null) "Launch Game" else "Select Game",
                     icon = Icons.Default.PlayArrow,
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     modifier = if (selectedGame != null) Modifier.fillMaxWidth() else Modifier.weight(1f),
                     enabled = selectedGame != null,
-                    onClick = { 
-                        selectedGame?.let { viewModel.launchGameWithOverlay(context, it.packageName) }
+                    onClick = {
+                        selectedGame?.let { game ->
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            val intent = Intent(context, OverlayService::class.java).apply {
+                                putExtra("package_name", game.packageName)
+                                putExtra("timer_minutes", timerMinutesSelection.toInt())
+                            }
+                            context.startService(intent)
+                            viewModel.launchGameWithOverlay(context, game.packageName)
+                        }
                     }
                 )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // --- ULTIMATE GAME BOOSTER DASHBOARD ---
-            Text(
-                text = "Ace Game Dashboard",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-            ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    
-                    // 1. CPU & GPU Performance Modes
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FlashOn,
-                            contentDescription = "CPU GPU Mode",
-                            tint = if (isPerformanceModeEnabled) Color(0xFFFFD700) else MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "CPU & GPU Performance Mode",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                if (isPerformanceModeEnabled) "Governor locked on PERFORMANCE. High speed profile active."
-                                else "Standard device power saving is active. Tap to toggle.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = isPerformanceModeEnabled,
-                            onCheckedChange = { isPerformanceModeEnabled = it }
-                        )
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
-
-                    // 2. RAM Cleaner / Kill Background Processes
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Autorenew,
-                            contentDescription = "RAM Optimizer",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "RAM Optimizer / Task Killer",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                if (isCleaningRam) "Cleaning RAM & stopping background processes..."
-                                else if (ramFreedMb > 0) "Freed $ramFreedMb MB RAM! Background apps frozen."
-                                else "Clear memory & stop background apps to reduce micro-stutters.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Button(
-                            onClick = {
-                                if (!isCleaningRam) {
-                                    isCleaningRam = true
-                                    coroutineScope.launch {
-                                        viewModel.launchGameWithOverlay(context, context.packageName) // trigger VM clear
-                                        delay(1500)
-                                        ramFreedMb = (420..640).random()
-                                        isCleaningRam = false
-                                    }
-                                }
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            enabled = !isCleaningRam,
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
-                        ) {
-                            Text(if (isCleaningRam) "Boost..." else "Boost")
-                        }
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
-
-                    // 3. Thermal Management
-                    Row(
-                        verticalAlignment = Alignment.Top,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = "Thermal Info",
-                            tint = if (thermalTemp >= 40.0f) Color(0xFFFF5722) else Color(0xFF4CAF50),
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                "Device Thermal Monitor",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                "Temperature: ${String.format("%.1f", thermalTemp)}°C",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (thermalTemp >= 40.0f) Color(0xFFFF5722) else Color(0xFF4CAF50)
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                if (thermalTemp >= 40.0f) "WARNING: Device is heating up! Recommend reducing brightness or using a phone cooler to prevent thermal throttling."
-                                else "Device temperature is optimal. Power and speed delivery are fully stable.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
-
-                    // 4. Network Optimization
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Wifi,
-                            contentDescription = "Network Optimization",
-                            tint = if (isNetworkOptimized) Color(0xFF4CAF50) else MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "Network & DNS Optimization",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                if (isNetworkOptimized) "Cloudflare DNS (1.1.1.1) routing active. Priority channel enabled."
-                                else "Optimizes network latency & ping for multiplayer games.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = isNetworkOptimized,
-                            onCheckedChange = { isNetworkOptimized = it }
-                        )
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
-
-                    // 5. Display Optimization
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.BrightnessHigh,
-                            contentDescription = "Display Optimizer",
-                            tint = if (isDisplayOptimized) Color(0xFF2196F3) else MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "Display Frequency & Brightness Lock",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                if (isDisplayOptimized) "Max refresh rate (120Hz) forced. Brightness auto-dim disabled."
-                                else "Locks maximum refresh rate and brightness for absolute smoothness.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = isDisplayOptimized,
-                            onCheckedChange = { isDisplayOptimized = it }
-                        )
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
-
-                    // 6. Game Mode APIs Integration Status
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Hardware APIs",
-                            tint = Color(0xFF00E676),
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                "System Hardware Game API Status",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                "Active: $manufacturerApiName Integrated",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF00E676)
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Enlarged card showing related YouTube videos (visible when a game is selected)
+            // Premium Content Visual Grid Module Layout
             AnimatedVisibility(
                 visible = selectedGame != null,
                 enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
@@ -496,7 +422,6 @@ fun PlayScreen(
                             )
                         ) {
                             Column(modifier = Modifier.padding(20.dp)) {
-                                // Game Header Info (Enlarged Card view)
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.fillMaxWidth()
@@ -532,7 +457,6 @@ fun PlayScreen(
 
                                 Spacer(modifier = Modifier.height(16.dp))
 
-                                // Playtime info
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.fillMaxWidth()
@@ -545,7 +469,7 @@ fun PlayScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Playtime (last 7 days): ${formatPlayTime(selectedGamePlayTime)}",
+                                        text = "Weekly Playtime: ${formatPlayTime(selectedGamePlayTime)}",
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurface
@@ -554,66 +478,62 @@ fun PlayScreen(
 
                                 Spacer(modifier = Modifier.height(20.dp))
 
-                                // YouTube Videos Section on exact Game Topic
                                 Text(
-                                    text = "Related Content",
+                                    text = "Popular Content Live Feed",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
 
-                                // Video suggestions linking to YouTube searches matching EXACT game topic
-                                val videoCategories = listOf(
-                                    Triple("Gameplay & Walkthrough", Icons.Default.PlayArrow, "gameplay walkthrough"),
-                                    Triple("Tips & Tricks", Icons.Default.Lightbulb, "tips and tricks tutorial"),
-                                    Triple("Reviews & Trailer", Icons.Default.Movie, "trailer review")
-                                )
-
-                                Column(
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    videoCategories.forEach { (title, icon, searchSuffix) ->
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(MaterialTheme.colorScheme.surface)
-                                                .clickable {
-                                                    val query = Uri.encode("${game.appName} $searchSuffix")
-                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=$query"))
-                                                    context.startActivity(intent)
-                                                }
-                                                .padding(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
+                                when {
+                                    isVideoLoading -> {
+                                        LazyRow(
+                                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                            modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            Icon(
-                                                imageVector = icon,
-                                                contentDescription = null,
-                                                tint = Color(0xFFFF0000), // YouTube red
-                                                modifier = Modifier.size(28.dp)
+                                            items(3) { PremiumVideoShimmerPlaceholder() }
+                                        }
+                                    }
+                                    !videoErrorMsg.isNullOrBlank() -> {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = videoErrorMsg ?: "Failed to complete data stream processing.",
+                                                color = MaterialTheme.colorScheme.error,
+                                                style = MaterialTheme.typography.bodyMedium
                                             )
-                                            Spacer(modifier = Modifier.width(12.dp))
-                                            Column {
-                                                Text(
-                                                    text = title,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                                Text(
-                                                    text = "Watch on YouTube",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    }
+                                    fetchedVideoIds.isEmpty() -> {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "Provide a valid YouTube Data API Key to stream custom metrics live.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    else -> {
+                                        var playingVideoId by remember { mutableStateOf<String?>(null) }
+                                        LazyRow(
+                                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            items(fetchedVideoIds, key = { it }) { id ->
+                                                ExpandableVideoCard(
+                                                    videoId = id,
+                                                    gameName = game.appName,
+                                                    isPlaying = playingVideoId == id,
+                                                    onPlay = { playingVideoId = id },
+                                                    onClose = { playingVideoId = null }
                                                 )
                                             }
-                                            Spacer(modifier = Modifier.weight(1f))
-                                            Icon(
-                                                Icons.Default.Launch,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(16.dp)
-                                            )
                                         }
                                     }
                                 }
@@ -623,45 +543,35 @@ fun PlayScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // Device Info
+            // My Device System Layout Monitor Block
             val deviceInfo by viewModel.deviceInfo.collectAsState()
+            Text(
+                text = "My Device",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.DeveloperMode,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "Device Information",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(20.dp))
-                    
                     deviceInfo?.let { info ->
                         InfoRow(label = "Model", value = info.deviceName)
-                        InfoRow(label = "Processor", value = info.processor)
-                        InfoRow(label = "RAM", value = "${info.totalRamMB} MB")
-                        InfoRow(label = "Android", value = "Version ${info.androidVersion}")
+                        InfoRow(label = "Chipset", value = info.processor)
                         InfoRow(label = "GPU", value = info.gpuRenderer)
-                    } ?: Text("Loading device info...", style = MaterialTheme.typography.bodyMedium)
+                        InfoRow(label = "RAM", value = "${(info.totalRamMB / 1024.0).toInt()} GB")
+                        InfoRow(label = "Android", value = info.androidVersion)
+                    } ?: Text("Initializing hardware monitor...", style = MaterialTheme.typography.bodyMedium)
                 }
             }
-            
-            Spacer(modifier = Modifier.height(120.dp)) 
+
+            Spacer(modifier = Modifier.height(120.dp))
         }
-        
+
         if (showAppPicker) {
             AppPickerSheet(
                 apps = allApps,
@@ -672,88 +582,30 @@ fun PlayScreen(
                 onDismiss = { showAppPicker = false }
             )
         }
-
-        if (showLoginModal) {
-            LoginModal(
-                onLinkGoogle = { viewModel.linkGoogleAccount(true) },
-                onDismiss = { showLoginModal = false }
-            )
-        }
     }
 }
 
 @Composable
-fun LoginModal(onLinkGoogle: () -> Unit, onDismiss: () -> Unit) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth(0.9f)
-                .padding(16.dp)
-                .graphicsLayer { 
-                    shadowElevation = 8.dp.toPx()
-                    shape = RoundedCornerShape(28.dp)
-                    clip = true
-                },
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.AccountCircle,
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    "Secure your account",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "Link your Google account to secure your progress.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-                Button(
-                    onClick = {
-                        onLinkGoogle()
-                        onDismiss()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text("Secure with Google")
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                TextButton(onClick = onDismiss) {
-                    Text("Maybe later", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-    }
-}
+fun PremiumVideoShimmerPlaceholder() {
+    val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
 
-fun formatPlayTime(millis: Long): String {
-    val minutes = (millis / (1000 * 60)) % 60
-    val hours = (millis / (1000 * 60 * 60))
-    return if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
+    Box(
+        modifier = Modifier
+            .width(280.dp)
+            .height(220.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = alpha))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), RoundedCornerShape(24.dp))
+    )
 }
 
 @Composable
@@ -762,66 +614,57 @@ fun GameCard(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val scale by animateFloatAsState(
-        targetValue = if (isSelected) 1.08f else 1f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
-        label = "scale"
-    )
-
-    Column(
+    Card(
         modifier = Modifier
-            .width(130.dp)
-            .graphicsLayer(scaleX = scale, scaleY = scale)
+            .width(100.dp)
+            .height(130.dp)
             .clip(RoundedCornerShape(24.dp))
-            .then(
-                if (isSelected) {
-                    Modifier.background(
-                        Brush.verticalGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.primaryContainer,
-                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-                            )
-                        )
-                    )
-                } else Modifier
-            )
-            .clickable { onClick() }
-            .padding(8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .clickable(onClick = onClick)
+            .border(
+                width = 2.dp,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                shape = RoundedCornerShape(24.dp)
+            ),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) 
+                             else MaterialTheme.colorScheme.surfaceContainerLow
+        )
     ) {
-        Box(
-            modifier = Modifier
-                .size(88.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .then(
-                    if (isSelected) Modifier.border(2.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(22.dp))
-                    else Modifier
-                ),
-            contentAlignment = Alignment.Center
+        Column(
+            modifier = Modifier.fillMaxSize().padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Image(
-                painter = rememberDrawablePainter(drawable = game.icon),
-                contentDescription = null,
-                modifier = Modifier.size(56.dp)
+            Box(
+                modifier = Modifier
+                    .size(60.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = rememberDrawablePainter(drawable = game.icon),
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = game.appName,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = game.appName,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-            maxLines = 1,
-            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(horizontal = 4.dp)
-        )
     }
 }
 
 @Composable
 fun LargeActionButton(
     text: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     containerColor: Color,
     contentColor: Color,
     modifier: Modifier = Modifier,
@@ -832,26 +675,83 @@ fun LargeActionButton(
         onClick = onClick,
         modifier = modifier.height(64.dp),
         shape = RoundedCornerShape(20.dp),
-        enabled = enabled,
         colors = ButtonDefaults.buttonColors(
             containerColor = containerColor,
             contentColor = contentColor,
-            disabledContainerColor = containerColor.copy(alpha = 0.4f),
-            disabledContentColor = contentColor.copy(alpha = 0.4f)
+            disabledContainerColor = containerColor.copy(alpha = 0.5f),
+            disabledContentColor = contentColor.copy(alpha = 0.5f)
         ),
-        contentPadding = PaddingValues(horizontal = 16.dp)
+        enabled = enabled,
+        contentPadding = PaddingValues(horizontal = 24.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = text,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
+        Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+fun ExpandableVideoCard(
+    videoId: String,
+    gameName: String,
+    isPlaying: Boolean,
+    onPlay: () -> Unit,
+    onClose: () -> Unit
+) {
+    val cardWidth by animateDpAsState(targetValue = if (isPlaying) 320.dp else 280.dp, label = "width")
+    val cardHeight by animateDpAsState(targetValue = if (isPlaying) 260.dp else 220.dp, label = "height")
+
+    Card(
+        modifier = Modifier
+            .width(cardWidth)
+            .height(cardHeight)
+            .clip(RoundedCornerShape(24.dp))
+            .clickable(enabled = !isPlaying) { onPlay() },
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+    ) {
+        if (isPlaying) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                AndroidView(
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            settings.javaScriptEnabled = true
+                            webViewClient = WebViewClient()
+                            webChromeClient = WebChromeClient()
+                            loadUrl("https://www.youtube.com/embed/$videoId?autoplay=1")
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                }
+            }
+        } else {
+            Box(modifier = Modifier.fillMaxSize()) {
+                Image(
+                    painter = rememberAsyncImagePainter("https://img.youtube.com/vi/$videoId/0.jpg"),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.3f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.PlayCircleOutline,
+                        contentDescription = "Play",
+                        tint = Color.White,
+                        modifier = Modifier.size(48.dp)
+                    )
+                }
+            }
         }
     }
 }
@@ -861,8 +761,9 @@ fun InfoRow(label: String, value: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = label,
@@ -871,9 +772,16 @@ fun InfoRow(label: String, value: String) {
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
         )
     }
+}
+
+fun formatPlayTime(millis: Long): String {
+    val totalMinutes = millis / (1000 * 60)
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
 }

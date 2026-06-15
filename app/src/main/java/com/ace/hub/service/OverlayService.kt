@@ -35,6 +35,7 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 class OverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
+    private val overlayViewModelStore = ViewModelStore()
 
     override val savedStateRegistry: SavedStateRegistry
         get() = savedStateRegistryController.savedStateRegistry
@@ -58,8 +59,8 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
             monitoringService = binder.getService()
             bound = true
             serviceScope.launch {
-                monitoringService?.monitorData?.collect { 
-                    monitorData.value = it 
+                monitoringService?.monitorData?.collect {
+                    monitorData.value = it
                     checkForegroundPackage(it.foregroundPackage)
                 }
             }
@@ -74,12 +75,10 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var appIcon: Drawable? = null
     private var overlayAdded = false
     private var params = WindowManager.LayoutParams()
-    
-    // Timer state
+
     private var timerRemainingSeconds = mutableIntStateOf(0)
     private var timerJob: Job? = null
-    
-    // XP tracking
+
     private var sessionStartTime = 0L
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -90,25 +89,29 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
 
         super.onStartCommand(intent, flags, startId)
-        
+
         val newPackageName = intent?.getStringExtra("package_name")
         val timerMinutes = intent?.getIntExtra("timer_minutes", 0) ?: 0
-        
-        if (newPackageName != null && newPackageName != gamePackageName) {
+
+        if (!newPackageName.isNullOrBlank() && newPackageName != gamePackageName) {
             gamePackageName = newPackageName
             appIcon = try {
                 packageManager.getApplicationIcon(newPackageName)
             } catch (e: Exception) {
                 null
             }
-            
+
             sessionStartTime = System.currentTimeMillis()
-            
+
+            // Trigger automatic background termination countdown loop instantly
             if (timerMinutes > 0) {
                 startAutoCloseTimer(timerMinutes)
+            } else {
+                timerJob?.cancel()
+                timerRemainingSeconds.intValue = 0
             }
         }
-        
+
         if (!overlayAdded) {
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             startForegroundWithNotification()
@@ -170,7 +173,7 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
         overlayView = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@OverlayService)
             setViewTreeViewModelStoreOwner(object : ViewModelStoreOwner {
-                override val viewModelStore: ViewModelStore = ViewModelStore()
+                override val viewModelStore: ViewModelStore = overlayViewModelStore
             })
             setViewTreeSavedStateRegistryOwner(this@OverlayService)
         }
@@ -178,13 +181,14 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
         overlayView.setContent {
             AceHubTheme {
                 val data by monitorData.collectAsState()
-                
+
                 Box(
                     modifier = Modifier
                         .pointerInput(Unit) {
                             detectDragGestures(
                                 onDragEnd = {
-                                    val screenWidth = windowManager.defaultDisplay.width
+                                    val metrics = windowManager.currentWindowMetrics
+                                    val screenWidth = metrics.bounds.width()
                                     val centerX = params.x + overlayView.width / 2
                                     val targetX = if (centerX < screenWidth / 2) 0 else screenWidth - overlayView.width
                                     animateSnap(targetX)
@@ -227,7 +231,7 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
             val startX = params.x
             val duration = 200L
             val startTime = System.currentTimeMillis()
-            
+
             while (System.currentTimeMillis() - startTime < duration) {
                 val progress = (System.currentTimeMillis() - startTime).toFloat() / duration
                 params.x = (startX + (targetX - startX) * progress).toInt()
@@ -249,18 +253,16 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
             val channel = NotificationChannel(channelId, "AceHub", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
-        
-        val playtime = gamePackageName?.let { getPlayTimeFormatted(it) } ?: "0m"
-        
+
         val notification = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle("AceHub: $gamePackageName")
-            .setContentText("Total Playtime: $playtime | Optimizing Performance")
+            .setContentTitle("AceHub Performance Overlay")
+            .setContentText("Optimizing performance for the current session.")
             .setOngoing(true)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
-            
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(2, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
@@ -268,24 +270,15 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
-    private fun getPlayTimeFormatted(packageName: String): String {
-        return "1h 20m"
-    }
-
     private fun bindToMonitoringService() {
         bindService(Intent(this, MonitoringService::class.java), connection, Context.BIND_AUTO_CREATE)
     }
 
     override fun onDestroy() {
-        // Calculate session XP
         val sessionDurationMillis = System.currentTimeMillis() - sessionStartTime
         val sessionMinutes = sessionDurationMillis / (1000 * 60)
         if (sessionMinutes >= 1) {
             val prefs = UserPreferences(applicationContext)
-            val xpToAdd = (sessionMinutes / 60) * 5
-            if (xpToAdd > 0) {
-                prefs.totalXp += xpToAdd.toInt()
-            }
             prefs.totalPlaytimeMinutes += sessionMinutes
         }
 
@@ -296,6 +289,7 @@ class OverlayService : LifecycleService(), SavedStateRegistryOwner {
                 windowManager.removeView(overlayView)
             } catch (_: Exception) {}
         }
+        overlayViewModelStore.clear()
         serviceScope.cancel()
     }
 

@@ -5,7 +5,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
@@ -17,7 +16,7 @@ import com.ace.hub.service.MonitoringService
 import com.ace.hub.service.OverlayService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,8 +26,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
 
 @Serializable
 data class GitHubRelease(
@@ -36,7 +33,6 @@ data class GitHubRelease(
     val html_url: String
 )
 
-// FIXED: Corrected parameter type declarations from assignment syntax error rules
 data class BootTask(
     val name: String,
     val completed: Boolean = false,
@@ -50,9 +46,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val systemMonitor = SystemMonitor(context)
     private val gameRepository = GameRepository(context)
     private val userPrefs = UserPreferences(context)
-
-    private val auth = FirebaseAuth.getInstance()
-    private val db = FirebaseFirestore.getInstance()
 
     private val _username = MutableStateFlow(userPrefs.username)
     val username: StateFlow<String> = _username.asStateFlow()
@@ -96,28 +89,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _bootTasks = MutableStateFlow<List<BootTask>>(emptyList())
     val bootTasks: StateFlow<List<BootTask>> = _bootTasks.asStateFlow()
 
-    private val _totalXp = MutableStateFlow(userPrefs.totalXp)
-    val totalXp: StateFlow<Int> = _totalXp.asStateFlow()
-
     private val _bootFinished = MutableStateFlow(false)
     val bootFinished: StateFlow<Boolean> = _bootFinished.asStateFlow()
 
-    // FIXED: Added missing dashboard states requested by Navigation.kt layer
-    private val _isDashboardEnabled = MutableStateFlow<Boolean>(true)
+    private val _isDashboardEnabled = MutableStateFlow<Boolean>(false)
     val isDashboardEnabled: StateFlow<Boolean> = _isDashboardEnabled.asStateFlow()
-
-    // FIXED: Handled fallbacks gracefully using internal catch parameters to handle naming variations in userPrefs
-    private val _isGitHubLinked = MutableStateFlow<Boolean>(false)
-    val isGitHubLinked: StateFlow<Boolean> = _isGitHubLinked.asStateFlow()
-
-    private val _isGoogleLinked = MutableStateFlow<Boolean>(userPrefs.isGoogleLinked)
-    val isGoogleLinked: StateFlow<Boolean> = _isGoogleLinked.asStateFlow()
-
 
     fun updateUsername(name: String) {
         _username.value = name
         userPrefs.username = name
-        auth.currentUser?.let { syncUserData(name, it.email) }
     }
 
     fun updateSystemTheme(use: Boolean) {
@@ -160,45 +140,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         userPrefs.brightnessLock = enabled
     }
 
-    // FIXED: Added missing companion mutation logic requested by Navigation.kt
     fun updateDashboardEnabled(enabled: Boolean) {
         _isDashboardEnabled.value = enabled
-    }
-
-    fun linkGoogleAccount(success: Boolean) {
-        if (success) {
-            _isGoogleLinked.value = true
-            userPrefs.isGoogleLinked = true
-        }
-    }
-
-    fun linkGitHubAccount(success: Boolean) {
-        if (success) {
-            _isGitHubLinked.value = true
-        }
-    }
-
-    fun addXp(amount: Int) {
-        _totalXp.value += amount
-        userPrefs.totalXp = _totalXp.value
-    }
-
-    fun syncUserData(username: String, email: String?) {
-        val user = auth.currentUser ?: return
-        val userMap = mapOf(
-            "username" to username,
-            "email" to email,
-            "lastLogin" to System.currentTimeMillis(),
-            "totalXp" to _totalXp.value
-        )
-        db.collection("users").document(user.uid)
-            .set(userMap)
-            .addOnSuccessListener {
-                Log.d("AceHub", "User sync data updated securely on cloud nodes.")
-            }
-            .addOnFailureListener { e ->
-                Log.e("AceHub", "Sync failed on communication interface layer", e)
-            }
     }
 
     private fun initBootTasks() {
@@ -219,15 +162,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         success: Boolean,
         message: String = ""
     ) {
-        _bootTasks.value = _bootTasks.value.map {
-            if (it.name == name) {
-                it.copy(
-                    completed = success,
-                    failed = !success,
-                    message = message
-                )
-            } else {
-                it
+        viewModelScope.launch(Dispatchers.Main) {
+            _bootTasks.value = _bootTasks.value.map {
+                if (it.name == name) {
+                    it.copy(
+                        completed = success,
+                        failed = !success,
+                        message = message
+                    )
+                } else {
+                    it
+                }
             }
         }
     }
@@ -360,11 +305,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun hasUsagePermission(): Boolean {
+    suspend fun hasUsagePermission(): Boolean = withContext(Dispatchers.IO) {
         val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
         val time = System.currentTimeMillis()
         val stats = usageStatsManager.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, time - 1000 * 60, time)
-        return stats?.isNotEmpty() == true
+        stats?.isNotEmpty() == true
     }
 
     private val _monitorData = MutableStateFlow(MonitorData())
@@ -408,58 +353,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.Default) {
             initBootTasks()
 
-            try {
-                val today = java.util.Calendar.getInstance().apply {
-                    set(java.util.Calendar.HOUR_OF_DAY, 0)
-                    set(java.util.Calendar.MINUTE, 0)
-                    set(java.util.Calendar.SECOND, 0)
-                    set(java.util.Calendar.MILLISECOND, 0)
-                }.timeInMillis
+            completeTask("Loading user preferences", true)
 
-                if (userPrefs.lastLoginDate < today) {
-                    addXp(10)
-                    userPrefs.lastLoginDate = today
+            val deviceInfoJob = async {
+                try {
+                    val info = systemMonitor.getDeviceInfo()
+                    _deviceInfo.value = info
+                    completeTask("Loading device information", true)
+                } catch (e: Exception) {
+                    completeTask("Loading device information", false, e.message ?: "")
                 }
+            }
 
-                auth.currentUser?.let { user ->
-                    syncUserData(_username.value, user.email)
+            val gamesJob = async {
+                try {
+                    loadGames()
+                    completeTask("Scanning installed games", true)
+                    completeTask("Scanning installed apps", true)
+                } catch (e: Exception) {
+                    completeTask("Scanning installed games", false, e.message ?: "")
                 }
-
-                completeTask("Loading user preferences", true)
-            } catch (e: Exception) {
-                completeTask("Loading user preferences", false, e.message ?: "Unknown error")
             }
 
-            try {
-                startMonitoring()
-                completeTask("Starting monitoring service", true)
-            } catch (e: Exception) {
-                completeTask("Starting monitoring service", false, e.message ?: "Service failed")
+            val monitoringJob = async {
+                try {
+                    withContext(Dispatchers.Main) { startMonitoring() }
+                    completeTask("Starting monitoring service", true)
+                } catch (e: Exception) {
+                    completeTask("Starting monitoring service", false, e.message ?: "Service failed")
+                }
             }
 
-            try {
-                _deviceInfo.value = withContext(Dispatchers.IO) { systemMonitor.getDeviceInfo() }
-                completeTask("Loading device information", true)
-            } catch (e: Exception) {
-                completeTask("Loading device information", false, e.message ?: "")
+            val permissionsJob = async {
+                val permissionGranted = hasUsagePermission()
+                completeTask(
+                    "Checking permissions",
+                    permissionGranted,
+                    if (!permissionGranted) "Usage access not granted" else ""
+                )
             }
 
-            try {
-                loadGames()
-                completeTask("Scanning installed games", true)
-                completeTask("Scanning installed apps", true)
-            } catch (e: Exception) {
-                completeTask("Scanning installed games", false, e.message ?: "")
-            }
-
-            completeTask(
-                "Checking permissions",
-                hasUsagePermission(),
-                if (!hasUsagePermission()) "Usage access not granted" else ""
-            )
+            awaitAll(deviceInfoJob, gamesJob, monitoringJob, permissionsJob)
 
             try {
                 fetchInitialUsageStats()
@@ -475,7 +412,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 completeTask("Checking updates", false, e.message ?: "")
             }
 
-            _bootFinished.value = true
+            withContext(Dispatchers.Main) {
+                _bootFinished.value = true
+            }
         }
     }
 
@@ -508,10 +447,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     .take(15)
 
                 if (recentGamesFromStats.isNotEmpty()) {
-                    val totalSessionPlaytimeMinutes = stats
-                        .filter { it.packageName in gamePackages }
-                        .sumOf { it.totalTimeInForeground } / (1000 * 60)
-
                     withContext(Dispatchers.Main) {
                         val current = _recentGamesPackageNames.value.toMutableList()
                         recentGamesFromStats.forEach { pkg ->
@@ -521,14 +456,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         _recentGamesPackageNames.value = current.take(20)
                         userPrefs.recentGames = _recentGamesPackageNames.value
-
-                        val savedPlaytime = userPrefs.totalPlaytimeMinutes
-                        if (totalSessionPlaytimeMinutes > savedPlaytime) {
-                            val diff = totalSessionPlaytimeMinutes - savedPlaytime
-                            val xpToAdd = (diff / 60) * 5
-                            if (xpToAdd > 0) addXp(xpToAdd.toInt())
-                            userPrefs.totalPlaytimeMinutes = totalSessionPlaytimeMinutes
-                        }
                     }
                 }
             }
@@ -613,19 +540,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun getPlayTime(packageName: String): Long {
+    suspend fun getPlayTime(packageName: String): Long {
         return gameRepository.getAppPlayTime(packageName)
     }
 
-    fun getTotalPlayTime(): Long {
+    suspend fun getTotalPlayTime(): Long {
         return gameRepository.getTotalPlayTime()
     }
 
-    fun getWeeklyPlaytime(): List<Float> {
+    suspend fun getWeeklyPlaytime(): List<Float> {
         return gameRepository.getWeeklyPlaytime()
     }
 
-    fun getWeeklyPlaytimeForGame(packageName: String): List<Float> {
+    suspend fun getWeeklyPlaytimeForGame(packageName: String): List<Float> {
         return gameRepository.getWeeklyPlaytimeForGame(packageName)
     }
 

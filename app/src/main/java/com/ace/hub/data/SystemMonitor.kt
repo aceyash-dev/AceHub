@@ -17,6 +17,7 @@ import android.util.DisplayMetrics
 import android.view.WindowManager
 import java.io.File
 import java.io.RandomAccessFile
+import java.util.Locale
 
 class SystemMonitor(private val context: Context) {
 
@@ -25,16 +26,13 @@ class SystemMonitor(private val context: Context) {
 
     private var cachedGpuInfo: Triple<String, String, String>? = null
 
-    // ── CPU Usage ────────────────────────────────────────────────────────────
-
     fun getCpuUsage(): Float {
         return try {
             val reader = RandomAccessFile("/proc/stat", "r")
-            val line = reader.readLine() // first line: "cpu  user nice system idle iowait irq softirq ..."
+            val line = reader.readLine()
             reader.close()
 
             val tokens = line.split("\\s+".toRegex())
-            // tokens[0] = "cpu", tokens[1..] = numeric fields
             val user = tokens[1].toLong()
             val nice = tokens[2].toLong()
             val system = tokens[3].toLong()
@@ -52,17 +50,11 @@ class SystemMonitor(private val context: Context) {
             prevCpuTotal = totalCpu
             prevCpuIdle = totalIdle
 
-            if (deltaTotal == 0L) {
-                0f
-            } else {
-                ((deltaTotal - deltaIdle).toFloat() / deltaTotal.toFloat()) * 100f
-            }
+            if (deltaTotal == 0L) 0f else ((deltaTotal - deltaIdle).toFloat() / deltaTotal.toFloat()) * 100f
         } catch (_: Exception) {
             0f
         }
     }
-
-    // ── Core Frequencies ─────────────────────────────────────────────────────
 
     fun getCoreFrequencies(): List<Long?> {
         val coreCount = Runtime.getRuntime().availableProcessors()
@@ -77,8 +69,6 @@ class SystemMonitor(private val context: Context) {
         }
     }
 
-    // ── Memory Info ──────────────────────────────────────────────────────────
-
     fun getMemoryInfo(): Pair<Long, Long> {
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val memInfo = ActivityManager.MemoryInfo()
@@ -91,8 +81,6 @@ class SystemMonitor(private val context: Context) {
         return Pair(usedMB, totalMB)
     }
 
-    // ── Battery Info ─────────────────────────────────────────────────────────
-
     data class BatteryInfo(
         val temperatureCelsius: Float,
         val levelPercent: Int,
@@ -104,12 +92,9 @@ class SystemMonitor(private val context: Context) {
         val intentFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
         val batteryStatus: Intent? = context.registerReceiver(null, intentFilter)
 
-        if (batteryStatus == null) {
-            return BatteryInfo(0f, 0, false, "Unknown")
-        }
+        if (batteryStatus == null) return BatteryInfo(0f, 0, false, "Unknown")
 
         val temperature = batteryStatus.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) / 10f
-
         val level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
         val scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
         val levelPercent = if (scale > 0) (level * 100) / scale else 0
@@ -132,90 +117,68 @@ class SystemMonitor(private val context: Context) {
         return BatteryInfo(temperature, levelPercent, isCharging, healthText)
     }
 
-    // ── GPU Info ─────────────────────────────────────────────────────────────
+    private val gpuLock = Any()
 
     fun getGpuInfo(): Triple<String, String, String> {
-        cachedGpuInfo?.let { return it }
+        synchronized(gpuLock) {
+            cachedGpuInfo?.let { return it }
 
-        var renderer = "Unknown"
-        var vendor = "Unknown"
-        var version = "Unknown"
+            var renderer = "Unknown"
+            var vendor = "Unknown"
+            var version = "Unknown"
 
-        var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
-        var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
-        var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
+            var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
+            var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
+            var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
 
-        try {
-            eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
-            if (eglDisplay == EGL14.EGL_NO_DISPLAY) {
-                return Triple(renderer, vendor, version).also { cachedGpuInfo = it }
-            }
+            try {
+                eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
+                if (eglDisplay == EGL14.EGL_NO_DISPLAY) return Triple(renderer, vendor, version).also { cachedGpuInfo = it }
 
-            val majorMinor = IntArray(2)
-            if (!EGL14.eglInitialize(eglDisplay, majorMinor, 0, majorMinor, 1)) {
-                return Triple(renderer, vendor, version).also { cachedGpuInfo = it }
-            }
+                val majorMinor = IntArray(2)
+                if (!EGL14.eglInitialize(eglDisplay, majorMinor, 0, majorMinor, 1)) return Triple(renderer, vendor, version).also { cachedGpuInfo = it }
 
-            val configAttribs = intArrayOf(
-                EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
-                EGL14.EGL_SURFACE_TYPE, EGL14.EGL_PBUFFER_BIT,
-                EGL14.EGL_RED_SIZE, 8,
-                EGL14.EGL_GREEN_SIZE, 8,
-                EGL14.EGL_BLUE_SIZE, 8,
-                EGL14.EGL_ALPHA_SIZE, 8,
-                EGL14.EGL_NONE
-            )
-            val configs = arrayOfNulls<EGLConfig>(1)
-            val numConfigs = IntArray(1)
-            EGL14.eglChooseConfig(eglDisplay, configAttribs, 0, configs, 0, 1, numConfigs, 0)
-
-            if (numConfigs[0] == 0 || configs[0] == null) {
-                return Triple(renderer, vendor, version).also { cachedGpuInfo = it }
-            }
-
-            val contextAttribs = intArrayOf(
-                EGL14.EGL_CONTEXT_CLIENT_VERSION, 2,
-                EGL14.EGL_NONE
-            )
-            eglContext = EGL14.eglCreateContext(
-                eglDisplay, configs[0]!!, EGL14.EGL_NO_CONTEXT, contextAttribs, 0
-            )
-
-            val surfaceAttribs = intArrayOf(
-                EGL14.EGL_WIDTH, 1,
-                EGL14.EGL_HEIGHT, 1,
-                EGL14.EGL_NONE
-            )
-            eglSurface = EGL14.eglCreatePbufferSurface(eglDisplay, configs[0]!!, surfaceAttribs, 0)
-
-            EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)
-
-            renderer = GLES20.glGetString(GLES20.GL_RENDERER) ?: "Unknown"
-            vendor = GLES20.glGetString(GLES20.GL_VENDOR) ?: "Unknown"
-            version = GLES20.glGetString(GLES20.GL_VERSION) ?: "Unknown"
-        } catch (_: Exception) {
-            // GPU info unavailable
-        } finally {
-            if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
-                EGL14.eglMakeCurrent(
-                    eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT
+                val configAttribs = intArrayOf(
+                    EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
+                    EGL14.EGL_SURFACE_TYPE, EGL14.EGL_PBUFFER_BIT,
+                    EGL14.EGL_RED_SIZE, 8,
+                    EGL14.EGL_GREEN_SIZE, 8,
+                    EGL14.EGL_BLUE_SIZE, 8,
+                    EGL14.EGL_ALPHA_SIZE, 8,
+                    EGL14.EGL_NONE
                 )
-                if (eglSurface != EGL14.EGL_NO_SURFACE) {
-                    EGL14.eglDestroySurface(eglDisplay, eglSurface)
+                val configs = arrayOfNulls<EGLConfig>(1)
+                val numConfigs = IntArray(1)
+                EGL14.eglChooseConfig(eglDisplay, configAttribs, 0, configs, 0, 1, numConfigs, 0)
+
+                if (numConfigs[0] == 0 || configs[0] == null) return Triple(renderer, vendor, version).also { cachedGpuInfo = it }
+
+                val contextAttribs = intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE)
+                eglContext = EGL14.eglCreateContext(eglDisplay, configs[0]!!, EGL14.EGL_NO_CONTEXT, contextAttribs, 0)
+
+                val surfaceAttribs = intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE)
+                eglSurface = EGL14.eglCreatePbufferSurface(eglDisplay, configs[0]!!, surfaceAttribs, 0)
+
+                EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)
+
+                renderer = GLES20.glGetString(GLES20.GL_RENDERER) ?: "Unknown"
+                vendor = GLES20.glGetString(GLES20.GL_VENDOR) ?: "Unknown"
+                version = GLES20.glGetString(GLES20.GL_VERSION) ?: "Unknown"
+            } catch (_: Exception) {
+            } finally {
+                if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
+                    EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
+                    if (eglSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(eglDisplay, eglSurface)
+                    if (eglContext != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(eglDisplay, eglContext)
+                    EGL14.eglTerminate(eglDisplay)
                 }
-                if (eglContext != EGL14.EGL_NO_CONTEXT) {
-                    EGL14.eglDestroyContext(eglDisplay, eglContext)
-                }
-                EGL14.eglTerminate(eglDisplay)
             }
+
+            val result = Triple(renderer, vendor, version)
+            cachedGpuInfo = result
+            return result
         }
-
-        val result = Triple(renderer, vendor, version)
-        cachedGpuInfo = result
-        return result
     }
-
-    // ── Thermal Status ───────────────────────────────────────────────────────
 
     fun getThermalStatus(): Pair<Int, String> {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -235,8 +198,6 @@ class SystemMonitor(private val context: Context) {
         }
         return Pair(0, "Normal")
     }
-
-    // ── Collect All Monitor Data ─────────────────────────────────────────────
 
     fun collectMonitorData(): MonitorData {
         val cpuUsage = getCpuUsage()
@@ -266,19 +227,27 @@ class SystemMonitor(private val context: Context) {
         )
     }
 
-    // ── Device Info ──────────────────────────────────────────────────────────
-
     @Suppress("DEPRECATION")
     fun getDeviceInfo(): DeviceInfo {
         val (gpuRenderer, gpuVendor, gpuVersion) = getGpuInfo()
         val (_, ramTotal) = getMemoryInfo()
 
+        val manufacturer = Build.MANUFACTURER.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
+        val model = Build.MODEL
+        
+        // Intelligent naming combination
+        val deviceName = if (model.lowercase().contains(manufacturer.lowercase())) {
+            model
+        } else {
+            "$manufacturer $model"
+        }
+
         val processorName = try {
-            File("/proc/cpuinfo").readLines()
-                .firstOrNull { it.startsWith("Hardware") || it.startsWith("model name") }
-                ?.substringAfter(":")
-                ?.trim()
-                ?: Build.HARDWARE
+            val cpuInfo = File("/proc/cpuinfo").readLines()
+            val hardware = cpuInfo.firstOrNull { it.startsWith("Hardware") }?.substringAfter(":")?.trim()
+            val modelName = cpuInfo.firstOrNull { it.startsWith("model name") }?.substringAfter(":")?.trim()
+            
+            hardware ?: modelName ?: Build.HARDWARE
         } catch (_: Exception) {
             Build.HARDWARE
         }
@@ -291,9 +260,9 @@ class SystemMonitor(private val context: Context) {
         val screenDensity = metrics.densityDpi
 
         return DeviceInfo(
-            deviceName = "${Build.MANUFACTURER} ${Build.MODEL}",
-            manufacturer = Build.MANUFACTURER,
-            model = Build.MODEL,
+            deviceName = deviceName,
+            manufacturer = manufacturer,
+            model = model,
             androidVersion = Build.VERSION.RELEASE,
             apiLevel = Build.VERSION.SDK_INT,
             processor = processorName,

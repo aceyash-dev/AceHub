@@ -1,5 +1,7 @@
 package com.ace.hub.ui
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -12,31 +14,25 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.ace.hub.R
 
 @Composable
 fun SettingsScreen(
     useSystemTheme: Boolean,
     onUseSystemThemeChanged: (Boolean) -> Unit,
-    isUsageAnalyticsEnabled: Boolean,
-    onUsageAnalyticsEnabledChanged: (Boolean) -> Unit,
-    hasUsagePermission: Boolean,
     isOverlayEnabled: Boolean,
     onOverlayEnabledChanged: (Boolean) -> Unit,
     isAutoBoostEnabled: Boolean,
     onAutoBoostEnabledChanged: (Boolean) -> Unit,
-    showBatteryStats: Boolean,
-    onShowBatteryStatsChanged: (Boolean) -> Unit,
-    vibrationOnLaunch: Boolean,
-    onVibrationOnLaunchChanged: (Boolean) -> Unit,
     autoDnd: Boolean,
     onAutoDndChanged: (Boolean) -> Unit,
     brightnessLock: Boolean,
-    onBrightnessLockChanged: (Boolean) -> Unit,
-    isDashboardEnabled: Boolean,
-    onDashboardEnabledChanged: (Boolean) -> Unit
+    onBrightnessLockChanged: (Boolean) -> Unit
 ) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -69,31 +65,12 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(24.dp))
         
         Text(
-            text = "Features",
+            text = "Performance & Stats",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary
         )
         
         Spacer(modifier = Modifier.height(16.dp))
-
-        SettingsToggle(
-            title = "Ace Dashboard",
-            description = "Show performance tweaks (CPU, RAM, Thermal, Network)",
-            checked = isDashboardEnabled,
-            onCheckedChange = onDashboardEnabledChanged
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        SettingsToggle(
-            title = "Usage Analytics",
-            description = if (hasUsagePermission) "Track game play time and performance" else "Permission Required",
-            checked = isUsageAnalyticsEnabled,
-            onCheckedChange = onUsageAnalyticsEnabledChanged,
-            error = !hasUsagePermission
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
 
         SettingsToggle(
             title = "Floating Overlay",
@@ -106,27 +83,9 @@ fun SettingsScreen(
 
         SettingsToggle(
             title = "Auto Boost",
-            description = "Optimize device performance on launch",
+            description = "Kill background processes on game launch",
             checked = isAutoBoostEnabled,
             onCheckedChange = onAutoBoostEnabledChanged
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        SettingsToggle(
-            title = "Show Battery Stats",
-            description = "Monitor battery temperature and level",
-            checked = showBatteryStats,
-            onCheckedChange = onShowBatteryStatsChanged
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        SettingsToggle(
-            title = "Vibration on Launch",
-            description = "Haptic feedback when starting a game",
-            checked = vibrationOnLaunch,
-            onCheckedChange = onVibrationOnLaunchChanged
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -155,19 +114,16 @@ fun SettingsScreen(
             onCheckedChange = onBrightnessLockChanged
         )
 
-        Spacer(modifier = Modifier.height(100.dp))
+        Spacer(modifier = Modifier.height(48.dp))
     }
 }
 
 @Composable
 fun SettingsCard(
-    onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         content = content
@@ -179,8 +135,7 @@ fun SettingsToggle(
     title: String,
     description: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    error: Boolean = false
+    onCheckedChange: (Boolean) -> Unit
 ) {
     SettingsCard {
         Row(
@@ -194,13 +149,12 @@ fun SettingsToggle(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                    fontWeight = FontWeight.SemiBold
                 )
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Switch(
@@ -222,13 +176,7 @@ fun SettingsToggle(
                             modifier = Modifier.size(SwitchDefaults.IconSize),
                         )
                     }
-                },
-                colors = if (error) SwitchDefaults.colors(
-                    checkedThumbColor = MaterialTheme.colorScheme.error,
-                    checkedTrackColor = MaterialTheme.colorScheme.errorContainer,
-                    uncheckedThumbColor = MaterialTheme.colorScheme.error,
-                    uncheckedBorderColor = MaterialTheme.colorScheme.error
-                ) else SwitchDefaults.colors()
+                }
             )
         }
     }

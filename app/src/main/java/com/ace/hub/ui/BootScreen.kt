@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ace.hub.ui.components.FpsXyGraph
 
 @Composable
 fun BootScreen(viewModel: MainViewModel) {
@@ -147,7 +148,7 @@ fun BootScreen(viewModel: MainViewModel) {
                     
                     if (isExpanded) {
                         Spacer(modifier = Modifier.height(20.dp))
-                        FpsXyGraph(monitorData.fpsHistoryList, purpleColor)
+                        FpsXyGraph(history = monitorData.fpsHistoryList, color = purpleColor)
                     }
                 }
             }
@@ -162,80 +163,6 @@ fun BootScreen(viewModel: MainViewModel) {
                 items(tasks) { task ->
                     BootTaskRow(task, purpleColor)
                 }
-            }
-        }
-    }
-}
-
-@Composable
-fun FpsXyGraph(history: List<Float>, color: Color) {
-    val maxFps = 120f
-    val milestones = listOf(30f, 60f, 90f)
-    
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(180.dp)
-            .padding(start = 30.dp, bottom = 20.dp, end = 10.dp)
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val width = size.width
-            val height = size.height
-            val spacing = width / (if (history.size > 1) history.size - 1 else 1)
-
-            // Draw Milestones
-            milestones.forEach { fps ->
-                val y = height - (fps / maxFps) * height
-                drawLine(
-                    color = color.copy(alpha = 0.15f),
-                    start = Offset(0f, y),
-                    end = Offset(width, y),
-                    strokeWidth = 1.dp.toPx()
-                )
-                
-                // Draw text labels
-                drawContext.canvas.nativeCanvas.apply {
-                    val paint = android.graphics.Paint().apply {
-                        this.color = android.graphics.Color.argb((0.4f * 255).toInt(), (color.red * 255).toInt(), (color.green * 255).toInt(), (color.blue * 255).toInt())
-                        this.textSize = 10.sp.toPx()
-                        this.typeface = android.graphics.Typeface.MONOSPACE
-                    }
-                    drawText(fps.toInt().toString(), -25.dp.toPx(), y + 4.dp.toPx(), paint)
-                }
-            }
-
-            // Draw Axis
-            drawLine(color.copy(alpha = 0.3f), Offset(0f, 0f), Offset(0f, height), 1.dp.toPx())
-            drawLine(color.copy(alpha = 0.3f), Offset(0f, height), Offset(width, height), 1.dp.toPx())
-
-            if (history.isNotEmpty()) {
-                val path = Path()
-                history.forEachIndexed { i, fps ->
-                    val x = i * spacing
-                    val y = height - (fps / maxFps) * height
-                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                }
-
-                // Draw Path
-                drawPath(
-                    path = path,
-                    color = color,
-                    style = Stroke(width = 2.dp.toPx())
-                )
-                
-                // Draw Area Gradient
-                val fillPath = Path().apply {
-                    addPath(path)
-                    lineTo(width, height)
-                    lineTo(0f, height)
-                    close()
-                }
-                drawPath(
-                    path = fillPath,
-                    brush = Brush.verticalGradient(
-                        colors = listOf(color.copy(alpha = 0.3f), Color.Transparent)
-                    )
-                )
             }
         }
     }
